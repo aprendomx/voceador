@@ -36,7 +36,7 @@ final class Logger {
 	 * Patrones sensibles dentro de cadenas.
 	 */
 	private const SENSITIVE_IN_STRING = array(
-		'/((?:access_token|client_secret|app_secret|fb_exchange_token)=)[^&\s]+/i' => '$1[redactado]',
+		'/((?:access_token|client_secret|app_secret|fb_exchange_token|code)=)[^&\s]+/i' => '$1[redactado]',
 		'/EAA[A-Za-z0-9]{20,}/' => '[redactado]',
 	);
 
@@ -82,7 +82,7 @@ final class Logger {
 			'created_at' => current_time( 'mysql', true ),
 			'level'      => $level,
 			'event'      => substr( $event, 0, 60 ),
-			'message'    => $message,
+			'message'    => self::redact_string( $message ),
 		);
 
 		foreach ( self::ID_COLUMNS as $column ) {
@@ -145,6 +145,11 @@ final class Logger {
 	/**
 	 * Elimina secretos de un contexto, de forma recursiva.
 	 *
+	 * Los objetos se normalizan a array antes de redactar: WP_Error se descompone en
+	 * error_code/message/data (error_code, no code, para que la clave exacta "code" no
+	 * la redacte la regla de claves sensibles: un código de WP_Error no es un secreto),
+	 * y cualquier otro objeto se convierte con get_object_vars().
+	 *
 	 * @param array $context Contexto.
 	 * @return array
 	 */
@@ -157,16 +162,36 @@ final class Logger {
 				continue;
 			}
 
+			if ( $value instanceof \WP_Error ) {
+				$value = array(
+					'error_code' => $value->get_error_code(),
+					'message'    => $value->get_error_message(),
+					'data'       => $value->get_error_data(),
+				);
+			} elseif ( is_object( $value ) ) {
+				$value = get_object_vars( $value );
+			}
+
 			if ( is_array( $value ) ) {
 				$clean[ $key ] = self::redact( $value );
 			} elseif ( is_string( $value ) ) {
-				$clean[ $key ] = preg_replace( array_keys( self::SENSITIVE_IN_STRING ), array_values( self::SENSITIVE_IN_STRING ), $value );
+				$clean[ $key ] = self::redact_string( $value );
 			} else {
 				$clean[ $key ] = $value;
 			}
-		}
+		}//end foreach
 
 		return $clean;
+	}
+
+	/**
+	 * Aplica los patrones de secretos dentro de cadenas a un texto suelto.
+	 *
+	 * @param string $text Texto a redactar.
+	 * @return string
+	 */
+	public static function redact_string( string $text ): string {
+		return (string) preg_replace( array_keys( self::SENSITIVE_IN_STRING ), array_values( self::SENSITIVE_IN_STRING ), $text );
 	}
 
 	/**

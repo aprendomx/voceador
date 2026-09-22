@@ -134,4 +134,39 @@ class LoggerTest extends WP_UnitTestCase {
 			)
 		);
 	}
+
+	public function test_message_is_redacted(): void {
+		global $wpdb;
+		$this->logger->error( 'e', 'Token EAA' . str_repeat( 'Ab1', 10 ) . ' rechazado en ?access_token=abc&code=xyz' );
+
+		$row = $wpdb->get_row( 'SELECT * FROM ' . ( new Schema( $wpdb ) )->table( 'log' ) . ' ORDER BY id DESC LIMIT 1', ARRAY_A );
+
+		$this->assertStringNotContainsString( 'EAAAb1', $row['message'] );
+		$this->assertStringNotContainsString( 'access_token=abc', $row['message'] );
+		$this->assertStringNotContainsString( 'code=xyz', $row['message'] );
+		$this->assertStringContainsString( '[redactado]', $row['message'] );
+	}
+
+	public function test_code_in_query_string_is_redacted(): void {
+		$redacted = Logger::redact( array( 'url' => 'https://x/cb?code=AQDsecret&state=s' ) );
+
+		$this->assertSame( 'https://x/cb?code=[redactado]&state=s', $redacted['url'] );
+	}
+
+	public function test_objects_in_context_are_normalized_and_redacted(): void {
+		$redacted = Logger::redact(
+			array(
+				'error' => new WP_Error( 'auth', 'bad', array( 'access_token' => 'EAAx' ) ),
+				'obj'   => (object) array(
+					'client_secret' => 's',
+					'ok'            => 1,
+				),
+			)
+		);
+
+		$this->assertSame( 'auth', $redacted['error']['error_code'] );
+		$this->assertSame( '[redactado]', $redacted['error']['data']['access_token'] );
+		$this->assertSame( '[redactado]', $redacted['obj']['client_secret'] );
+		$this->assertSame( 1, $redacted['obj']['ok'] );
+	}
 }
