@@ -38,6 +38,8 @@ npm run lint:fix               # corrige el formato automáticamente
 
 Para probar la desinstalación usa siempre `wp plugin uninstall voceador --skip-delete`: la carpeta del plugin en wp-env es este repositorio y sin ese flag WP-CLI borraría los archivos.
 
+En la suite de tests el `Trigger` global está desenganchado; los tests que lo necesiten registran su propia instancia.
+
 ## Cifrado de credenciales
 
 Los tokens de los canales se cifran con una clave derivada de `AUTH_KEY`/`SECURE_AUTH_KEY` (o de la constante `VOCEADOR_ENCRYPTION_KEY`, si se define; es la opción recomendada). Rotar esas salts invalida todos los canales conectados, que habrá que reconectar.

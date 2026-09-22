@@ -24,4 +24,10 @@ class BootstrapTest extends WP_UnitTestCase {
 			( new ReflectionClass( \Voceador\Schema::class ) )->getFileName()
 		);
 	}
+
+	public function test_global_trigger_is_unhooked_in_tests(): void {
+		$trigger = \Voceador\Plugin::boot()->get( \Voceador\Trigger::class );
+
+		$this->assertFalse( has_action( 'transition_post_status', array( $trigger, 'on_transition' ) ) );
+	}
 }

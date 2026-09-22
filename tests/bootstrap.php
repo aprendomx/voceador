@@ -31,6 +31,18 @@ tests_add_filter(
 		require $voceador_root . '/voceador.php';
 		require $voceador_root . '/tests/phpunit/Fixtures/FakeAdapter.php';
 		require $voceador_root . '/tests/phpunit/Fixtures/GraphResponses.php';
+
+		// El Trigger global no debe reaccionar en los tests: cada test que lo necesite
+		// registra su propia instancia. Se desengancha antes de que el harness tome la
+		// instantánea de hooks, así la restauración entre tests no lo vuelve a añadir.
+		add_action(
+			'plugins_loaded',
+			static function (): void {
+				$plugin = \Voceador\Plugin::boot();
+				remove_action( 'transition_post_status', array( $plugin->get( \Voceador\Trigger::class ), 'on_transition' ), 20 );
+			},
+			20
+		);
 	}
 );
 
