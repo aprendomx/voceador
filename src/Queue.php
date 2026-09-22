@@ -40,6 +40,17 @@ final class Queue implements Registrable {
 	private const STALE_AFTER = 900;
 
 	/**
+	 * Nombre corto de la opción con la marca de tiempo de la última ejecución de la cola.
+	 */
+	public const OPTION_LAST_RUN = 'cron_last_run';
+
+	/**
+	 * Ventana desde la última ejecución dentro de la cual se considera que algo (un cron
+	 * del sistema, típicamente) está ejecutando la cola.
+	 */
+	private const ACTIVITY_WINDOW = 2 * HOUR_IN_SECONDS;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param JobRepository $jobs   Trabajos.
@@ -57,6 +68,28 @@ final class Queue implements Registrable {
 		add_action( self::HOOK_SWEEP, array( $this, 'sweep' ) );
 		add_action( 'init', array( $this, 'ensure_sweep_scheduled' ) );
 		add_action( 'admin_notices', array( $this, 'maybe_notice_no_cron' ) );
+
+		add_action( self::HOOK_RUN, array( $this, 'touch' ), 1 );
+		add_action( self::HOOK_COMMENT, array( $this, 'touch' ), 1 );
+		add_action( self::HOOK_SWEEP, array( $this, 'touch' ), 1 );
+	}
+
+	/**
+	 * Registra que la cola acaba de ejecutarse, la ejecute quien la ejecute.
+	 *
+	 * Permite a cron_available() detectar un cron del sistema activo aunque WP-Cron
+	 * esté deshabilitado (DISABLE_WP_CRON), que es la configuración de producción
+	 * recomendada.
+	 */
+	public function touch(): void {
+		$option = VOCEADOR_PREFIX . self::OPTION_LAST_RUN;
+
+		if ( false === get_option( $option ) ) {
+			add_option( $option, time(), '', false );
+			return;
+		}
+
+		update_option( $option, time(), false );
 	}
 
 	/**
@@ -76,7 +109,7 @@ final class Queue implements Registrable {
 			return;
 		}
 
-		echo '<div class="notice notice-warning"><p>' . esc_html__( 'Voceador: WP-Cron está deshabilitado (DISABLE_WP_CRON) y no hay Action Scheduler. Configura un cron del sistema que llame a wp-cron.php o instala un plugin que provea Action Scheduler; si no, las publicaciones no se ejecutarán.', 'voceador' ) . '</p></div>';
+		echo '<div class="notice notice-warning"><p>' . esc_html__( 'Voceador: WP-Cron está deshabilitado (DISABLE_WP_CRON) y no hay Action Scheduler. Configura un cron del sistema que llame a wp-cron.php o instala un plugin que provea Action Scheduler; si no, las publicaciones no se ejecutarán. Este aviso desaparece solo en cuanto ese cron del sistema se ejecute.', 'voceador' ) . '</p></div>';
 	}
 
 	/**
@@ -91,17 +124,25 @@ final class Queue implements Registrable {
 	/**
 	 * Indica si algo va a ejecutar la cola.
 	 *
+	 * DISABLE_WP_CRON con un cron del sistema llamando a wp-cron.php es la configuración
+	 * de producción recomendada: en ese caso WP-Cron "está deshabilitado" pero la cola sí
+	 * se ejecuta, así que además se comprueba si hubo actividad reciente (touch()).
+	 *
 	 * @return bool
 	 */
 	public function cron_available(): bool {
-		if ( $this->uses_action_scheduler() ) {
-			return true;
-		}
-		if ( defined( 'ALTERNATE_WP_CRON' ) && ALTERNATE_WP_CRON ) {
-			return true;
-		}
+		$available = $this->uses_action_scheduler()
+			|| ( defined( 'ALTERNATE_WP_CRON' ) && ALTERNATE_WP_CRON )
+			|| ! ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON )
+			|| ( time() - (int) get_option( VOCEADOR_PREFIX . self::OPTION_LAST_RUN, 0 ) ) <= self::ACTIVITY_WINDOW;
 
-		return ! ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON );
+		/**
+		 * Permite forzar el resultado de cron_available(), por ejemplo cuando se sabe
+		 * por otra vía que un cron del sistema ejecuta la cola.
+		 *
+		 * @param bool $available Si algo va a ejecutar la cola.
+		 */
+		return (bool) apply_filters( 'voceador_cron_available', $available );
 	}
 
 	/**
@@ -130,6 +171,8 @@ final class Queue implements Registrable {
 	 * @return array{pending:int,rate_limited:int,stale:int}
 	 */
 	public function sweep(): array {
+		$this->touch();
+
 		$counts = array(
 			'pending'      => 0,
 			'rate_limited' => 0,

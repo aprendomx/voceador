@@ -53,12 +53,36 @@ class QueueTest extends WP_UnitTestCase {
 		$this->assertEqualsWithDelta( time() + 5, wp_next_scheduled( Queue::HOOK_COMMENT, array( 7 ) ), 5 );
 	}
 
-	public function test_cron_available_by_default(): void {
+	public function test_cron_available_detects_recent_activity(): void {
 		// El bootstrap de PHPUnit de WordPress core define DISABLE_WP_CRON en true de
 		// forma incondicional (includes/bootstrap.php e includes/install.php: el cron
-		// real haría una petición HTTP que siempre falla en CLI). Sin Action Scheduler
-		// ni ALTERNATE_WP_CRON, cron_available() refleja correctamente ese estado.
+		// real haría una petición HTTP que siempre falla en CLI). Es exactamente el caso
+		// que touch() cubre: un cron del sistema llama a wp-cron.php con DISABLE_WP_CRON
+		// activo, y cron_available() debe reflejarlo si hubo actividad reciente.
+		delete_option( VOCEADOR_PREFIX . Queue::OPTION_LAST_RUN );
 		$this->assertFalse( $this->queue->cron_available() );
+
+		update_option( VOCEADOR_PREFIX . Queue::OPTION_LAST_RUN, time() - 60 );
+		$this->assertTrue( $this->queue->cron_available() );
+
+		update_option( VOCEADOR_PREFIX . Queue::OPTION_LAST_RUN, time() - 3 * HOUR_IN_SECONDS );
+		$this->assertFalse( $this->queue->cron_available() );
+	}
+
+	public function test_cron_available_filter(): void {
+		delete_option( VOCEADOR_PREFIX . Queue::OPTION_LAST_RUN );
+		add_filter( 'voceador_cron_available', '__return_true' );
+
+		$this->assertTrue( $this->queue->cron_available() );
+	}
+
+	public function test_hooks_touch_activity(): void {
+		$this->queue->register_hooks();
+		delete_option( VOCEADOR_PREFIX . Queue::OPTION_LAST_RUN );
+
+		do_action( Queue::HOOK_RUN, 0 );
+
+		$this->assertEqualsWithDelta( time(), (int) get_option( VOCEADOR_PREFIX . Queue::OPTION_LAST_RUN ), 5 );
 	}
 
 	public function test_register_hooks_schedules_sweep(): void {
@@ -80,6 +104,8 @@ class QueueTest extends WP_UnitTestCase {
 		$fresh = $this->jobs->create_if_absent( 50, 4 );
 		$this->jobs->claim( $fresh );
 
+		delete_option( VOCEADOR_PREFIX . Queue::OPTION_LAST_RUN );
+
 		$counts = $this->queue->sweep();
 
 		$this->assertSame(
@@ -94,5 +120,6 @@ class QueueTest extends WP_UnitTestCase {
 		$this->assertNotFalse( wp_next_scheduled( Queue::HOOK_RUN, array( $limited ) ) );
 		$this->assertSame( 'unverified', $this->jobs->find( $stale )->error_code );
 		$this->assertSame( 'running', $this->jobs->find( $fresh )->status );
+		$this->assertEqualsWithDelta( time(), (int) get_option( VOCEADOR_PREFIX . Queue::OPTION_LAST_RUN ), 5 );
 	}
 }
