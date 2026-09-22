@@ -33,7 +33,7 @@ final class Uninstaller {
 	/**
 	 * Hooks de cron del plugin.
 	 */
-	public const CRON_HOOKS = array( 'check_tokens', 'refresh_ig_tokens', 'purge_log', 'sweep' );
+	public const CRON_HOOKS = array( 'check_tokens', 'refresh_ig_tokens', 'purge_log', 'sweep', 'run_job', 'run_comment' );
 
 	/**
 	 * Subcarpeta de uploads donde se guardan las imágenes generadas.
@@ -119,6 +119,12 @@ final class Uninstaller {
 
 		foreach ( self::CRON_HOOKS as $hook ) {
 			wp_unschedule_hook( VOCEADOR_PREFIX . $hook );
+		}
+
+		// Si otro plugin provee Action Scheduler, run_job/run_comment/sweep pudieron
+		// programarse ahí en vez de (o además de) en WP-Cron.
+		if ( function_exists( 'as_unschedule_all_actions' ) ) {
+			as_unschedule_all_actions( '', array(), 'voceador' );
 		}
 
 		if ( $delete_meta ) {
