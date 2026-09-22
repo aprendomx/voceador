@@ -22,6 +22,7 @@ final class Plugin {
 	private const REGISTRABLES = array(
 		Installer::class,
 		Queue::class,
+		Publisher::class,
 	);
 
 	/**
@@ -186,6 +187,18 @@ final class Plugin {
 
 		$this->factories[ Queue::class ] = static function ( Plugin $c ): Queue {
 			return new Queue( $c->get( JobRepository::class ), $c->get( Logger::class ) );
+		};
+
+		$this->factories[ Publisher::class ] = static function ( Plugin $c ): Publisher {
+			return new Publisher(
+				$c->get( JobRepository::class ),
+				$c->get( ChannelRepository::class ),
+				$c->get( Channels\ChannelRegistry::class ),
+				$c->get( Templates::class ),
+				$c->get( Settings::class ),
+				$c->get( Logger::class ),
+				$c->get( Queue::class )
+			);
 		};
 	}
 
