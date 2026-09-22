@@ -47,6 +47,7 @@ final class CLI {
 		\WP_CLI::add_command( 'voceador channels list', array( $this, 'cmd_channels_list' ) );
 		\WP_CLI::add_command( 'voceador channels delete', array( $this, 'cmd_channels_delete' ) );
 		\WP_CLI::add_command( 'voceador publish', array( $this, 'cmd_publish' ) );
+		\WP_CLI::add_command( 'voceador retry', array( $this, 'cmd_retry' ) );
 		\WP_CLI::add_command( 'voceador status', array( $this, 'cmd_status' ) );
 	}
 
@@ -132,6 +133,101 @@ final class CLI {
 	}
 
 	/**
+	 * Reintenta los trabajos ya existentes de un post.
+	 *
+	 * Sin $comment: solo actúa sobre trabajos en failed/skipped/rate_limited (release() +
+	 * run()); los demás se ignoran (ya están en curso, publicados o pendientes de por sí).
+	 * Con $comment: reintenta el comentario (retry_comment() + run_comment()) de cada
+	 * trabajo del post o canal; run_comment() ya es un no-op si el comentario no estaba
+	 * en un estado reintentable.
+	 *
+	 * @param int      $post_id    Post.
+	 * @param int|null $channel_id Canal concreto, o null para todos los trabajos del post.
+	 * @param bool     $comment    Si true, reintenta el comentario en vez de la publicación.
+	 * @param bool     $force      Si true, permite reintentar un trabajo "unverified" (ignorado con $comment).
+	 * @return array<int, string> Canal => estado.
+	 */
+	public function retry( int $post_id, ?int $channel_id, bool $comment = false, bool $force = false ): array {
+		$jobs = null === $channel_id
+			? $this->jobs->find_for_post( $post_id )
+			: array_filter( array( $this->jobs->find_for_post_and_channel( $post_id, $channel_id ) ) );
+
+		$result = array();
+
+		foreach ( $jobs as $job ) {
+			if ( $comment ) {
+				$this->jobs->retry_comment( $job->id );
+				$result[ $job->channel_id ] = $this->publisher->run_comment( $job->id );
+				continue;
+			}
+
+			if ( ! in_array( $job->status, array( 'failed', 'skipped', 'rate_limited' ), true ) ) {
+				continue;
+			}
+
+			$this->jobs->release( $job->id, current_time( 'mysql', true ) );
+			$result[ $job->channel_id ] = $this->publisher->run( $job->id, $force );
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Resuelve el --channel de la línea de comandos.
+	 *
+	 * @param array $assoc_args Opciones.
+	 * @return int|null|\WP_Error Id del canal, null si no se indicó --channel, o WP_Error si no es válido.
+	 */
+	public function resolve_channel( array $assoc_args ): int|null|\WP_Error {
+		if ( ! isset( $assoc_args['channel'] ) ) {
+			return null;
+		}
+
+		$raw = $assoc_args['channel'];
+		if ( ! is_numeric( $raw ) || null === $this->channels->find( (int) $raw ) ) {
+			return new \WP_Error( 'voceador_channel_missing', 'No existe ese canal.' );
+		}
+
+		return (int) $raw;
+	}
+
+	/**
+	 * Lee el Page Access Token de --token-file (o STDIN si es "-", con trim) o --token.
+	 *
+	 * @param array $assoc_args Opciones.
+	 * @return string|\WP_Error
+	 */
+	public function read_token( array $assoc_args ): string|\WP_Error {
+		if ( isset( $assoc_args['token-file'] ) ) {
+			$file = (string) $assoc_args['token-file'];
+
+			if ( '-' === $file ) {
+				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Lee STDIN (php://stdin), no un archivo remoto: WP_Filesystem no aplica.
+				$token = trim( (string) file_get_contents( 'php://stdin' ) );
+			} else {
+				if ( ! is_readable( $file ) ) {
+					return new \WP_Error( 'voceador_token_file', sprintf( 'No se pudo leer %s.', $file ) );
+				}
+				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Lectura local de la ruta que indicó el operador en la línea de comandos.
+				$token = trim( (string) file_get_contents( $file ) );
+			}
+
+			if ( '' === $token ) {
+				return new \WP_Error( 'voceador_token_file', 'El archivo de token está vacío.' );
+			}
+
+			return $token;
+		}
+
+		$token = (string) ( $assoc_args['token'] ?? '' );
+		if ( '' === $token ) {
+			return new \WP_Error( 'voceador_token_missing', 'Indica --token-file=- (recomendado, evita que el token quede en el historial y en el log de sudo) o --token.' );
+		}
+
+		return $token;
+	}
+
+	/**
 	 * Resumen del estado del plugin.
 	 *
 	 * @return array
@@ -165,16 +261,20 @@ final class CLI {
 	}
 
 	/**
-	 * `wp voceador channels add-facebook --page-id=<id> --token=<token> [--alias=<alias>]`
+	 * `wp voceador channels add-facebook --page-id=<id> [--token=<token>] [--token-file=<ruta|->] [--alias=<alias>]`
 	 *
 	 * @param array $args       Posicionales.
 	 * @param array $assoc_args Opciones.
 	 */
 	public function cmd_channels_add_facebook( array $args, array $assoc_args ): void {
 		$page_id = (string) ( $assoc_args['page-id'] ?? '' );
-		$token   = (string) ( $assoc_args['token'] ?? '' );
-		if ( '' === $page_id || '' === $token ) {
-			\WP_CLI::error( 'Faltan --page-id o --token.' );
+		if ( '' === $page_id ) {
+			\WP_CLI::error( 'Falta --page-id.' );
+		}
+
+		$token = $this->read_token( $assoc_args );
+		if ( is_wp_error( $token ) ) {
+			\WP_CLI::error( $token->get_error_message() );
 		}
 
 		$result = $this->add_facebook_page( $page_id, $token, (string) ( $assoc_args['alias'] ?? '' ) );
@@ -220,30 +320,49 @@ final class CLI {
 			\WP_CLI::error( 'Post inexistente.' );
 		}
 
-		$channel = isset( $assoc_args['channel'] ) ? (int) $assoc_args['channel'] : null;
-		$force   = isset( $assoc_args['force'] );
-		$result  = $this->publish( $post_id, $channel, (string) ( $assoc_args['source'] ?? 'cli' ), $force );
+		$channel = $this->resolve_channel( $assoc_args );
+		if ( is_wp_error( $channel ) ) {
+			\WP_CLI::error( $channel->get_error_message() );
+		}
+
+		$force  = isset( $assoc_args['force'] );
+		$result = $this->publish( $post_id, $channel, (string) ( $assoc_args['source'] ?? 'cli' ), $force );
 
 		if ( ! $result ) {
 			\WP_CLI::warning( 'No hay canales activos para este post.' );
 			return;
 		}
 
-		$rows = array();
-		foreach ( $result as $channel_id => $status ) {
-			$job    = $this->jobs->find_for_post_and_channel( $post_id, (int) $channel_id );
-			$rows[] = array(
-				'channel'    => $channel_id,
-				'status'     => $status,
-				'remote_url' => (string) ( $job->remote_url ?? '' ),
-				'error'      => (string) ( $job->error_message ?? '' ),
-			);
-		}
-		\WP_CLI\Utils\format_items( 'table', $rows, array( 'channel', 'status', 'remote_url', 'error' ) );
+		$this->print_result_table( $post_id, $result );
+	}
 
-		if ( in_array( 'failed', $result, true ) ) {
-			\WP_CLI::halt( 1 );
+	/**
+	 * `wp voceador retry <post_id> [--channel=<id>] [--comment] [--force]`
+	 *
+	 * @param array $args       Posicionales.
+	 * @param array $assoc_args Opciones.
+	 */
+	public function cmd_retry( array $args, array $assoc_args ): void {
+		$post_id = (int) ( $args[0] ?? 0 );
+		if ( $post_id <= 0 || ! get_post( $post_id ) instanceof \WP_Post ) {
+			\WP_CLI::error( 'Post inexistente.' );
 		}
+
+		$channel = $this->resolve_channel( $assoc_args );
+		if ( is_wp_error( $channel ) ) {
+			\WP_CLI::error( $channel->get_error_message() );
+		}
+
+		$comment = isset( $assoc_args['comment'] );
+		$force   = isset( $assoc_args['force'] );
+		$result  = $this->retry( $post_id, $channel, $comment, $force );
+
+		if ( ! $result ) {
+			\WP_CLI::warning( 'No hay trabajos que reintentar para este post.' );
+			return;
+		}
+
+		$this->print_result_table( $post_id, $result );
 	}
 
 	/**
@@ -259,6 +378,31 @@ final class CLI {
 
 		if ( $status['recent_log'] ) {
 			\WP_CLI\Utils\format_items( 'table', $status['recent_log'], array( 'created_at', 'level', 'event', 'message' ) );
+		}
+	}
+
+	/**
+	 * Tabla channel/status/remote_url/error de un resultado canal => estado; sale con
+	 * código 1 si algún canal quedó en failed. Común a cmd_publish() y cmd_retry().
+	 *
+	 * @param int   $post_id Post.
+	 * @param array $result  Canal => estado.
+	 */
+	private function print_result_table( int $post_id, array $result ): void {
+		$rows = array();
+		foreach ( $result as $channel_id => $status ) {
+			$job    = $this->jobs->find_for_post_and_channel( $post_id, (int) $channel_id );
+			$rows[] = array(
+				'channel'    => $channel_id,
+				'status'     => $status,
+				'remote_url' => (string) ( $job->remote_url ?? '' ),
+				'error'      => (string) ( $job->error_message ?? '' ),
+			);
+		}
+		\WP_CLI\Utils\format_items( 'table', $rows, array( 'channel', 'status', 'remote_url', 'error' ) );
+
+		if ( in_array( 'failed', $result, true ) ) {
+			\WP_CLI::halt( 1 );
 		}
 	}
 }
