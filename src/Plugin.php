@@ -23,6 +23,7 @@ final class Plugin {
 		Installer::class,
 		Queue::class,
 		Publisher::class,
+		Trigger::class,
 	);
 
 	/**
@@ -199,6 +200,14 @@ final class Plugin {
 				$c->get( Logger::class ),
 				$c->get( Queue::class )
 			);
+		};
+
+		$this->factories[ Rules::class ] = static function ( Plugin $c ): Rules {
+			return new Rules( $c->get( ChannelRepository::class ), $c->get( Settings::class ) );
+		};
+
+		$this->factories[ Trigger::class ] = static function ( Plugin $c ): Trigger {
+			return new Trigger( $c->get( Rules::class ), $c->get( JobRepository::class ), $c->get( Queue::class ), $c->get( Settings::class ), $c->get( Logger::class ) );
 		};
 	}
 
