@@ -33,7 +33,7 @@ final class Uninstaller {
 	/**
 	 * Hooks de cron del plugin.
 	 */
-	public const CRON_HOOKS = array( 'check_tokens', 'refresh_ig_tokens', 'purge_log' );
+	public const CRON_HOOKS = array( 'check_tokens', 'refresh_ig_tokens', 'purge_log', 'sweep' );
 
 	/**
 	 * Subcarpeta de uploads donde se guardan las imágenes generadas.

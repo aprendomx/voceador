@@ -21,6 +21,7 @@ final class Plugin {
 	 */
 	private const REGISTRABLES = array(
 		Installer::class,
+		Queue::class,
 	);
 
 	/**
@@ -181,6 +182,10 @@ final class Plugin {
 
 		$this->factories[ Templates::class ] = static function ( Plugin $c ): Templates {
 			return new Templates( $c->get( Settings::class ) );
+		};
+
+		$this->factories[ Queue::class ] = static function ( Plugin $c ): Queue {
+			return new Queue( $c->get( JobRepository::class ), $c->get( Logger::class ) );
 		};
 	}
 
