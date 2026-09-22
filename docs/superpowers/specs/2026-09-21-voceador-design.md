@@ -1,6 +1,6 @@
 # Voceador — Diseño de arquitectura y esquema de datos
 
-Fecha: 2026-09-21 · Estado: en revisión
+Fecha: 2026-09-21 · Actualizado: 2026-09-22 (tras la fase 0) · Estado: aprobado
 
 Fuente de requisitos: `docs/prompt-original.md` (prompt de desarrollo del plugin). Este documento fija las decisiones de arquitectura y datos; los detalles funcionales no repetidos aquí se toman del prompt.
 
@@ -29,7 +29,11 @@ Fuente de requisitos: `docs/prompt-original.md` (prompt de desarrollo del plugin
 
 ### Arranque
 
-`voceador.php` define `VOCEADOR_VERSION`, `VOCEADOR_PREFIX = 'voceador_'`, `VOCEADOR_FILE`; registra un autoloader PSR-4 propio (`Voceador\` → `src/`) y llama a `Plugin::boot()`. `Plugin` es un contenedor mínimo que instancia servicios una vez y registra hooks. Sin singletons ni estado global en las clases.
+`bootstrap.php` define `VOCEADOR_VERSION`, `VOCEADOR_PREFIX = 'voceador_'`, `VOCEADOR_FILE`, `VOCEADOR_DIR` y registra un autoloader PSR-4 propio (`Voceador\` → `src/`); lo comparten `voceador.php` (que llama a `Plugin::boot()`) y `uninstall.php`.
+
+`Plugin` es el único punto con estado global: un contenedor perezoso con un mapa de factories (`Plugin::get( string $id ): object`) que instancia cada servicio la primera vez que se pide, y que tras construirse recorre los servicios que implementan `Registrable` (`register_hooks(): void`) para que cada uno registre sus propios hooks. Expone `reset()` (solo para tests) que descarta la instancia. Los demás servicios no usan singletons ni estado global y reciben sus dependencias por constructor.
+
+`Installer::maybe_install()` (en `init`, prioridad 0) crea el esquema cuando `voceador_db_version` difiere de `Schema::DB_VERSION`, con un lock en `voceador_installing` contra ejecuciones concurrentes, y llama a `Schema::migrate( $from, $to )` para migraciones con datos.
 
 ### Capas (dependencias solo hacia abajo)
 
@@ -68,7 +72,7 @@ Los errores salen como `WP_Error` con clase normalizada (sección 4). `Publisher
 
 ### Multisite
 
-Tablas y opciones por sitio. Defaults de red en `site_option` `voceador_network_defaults`. `Settings::get()` resuelve canal → sitio → red → default en código. En activación en red las tablas se crean de forma perezosa (`Schema::maybe_upgrade()`) y en `wp_initialize_site`.
+Tablas y opciones por sitio. Defaults de red en `site_option` `voceador_network_defaults`. `Settings::get()` resuelve canal → sitio → red → default en código. En activación en red las tablas se crean de forma perezosa (`Installer::maybe_install()` en cada sitio) y en `wp_initialize_site` (prioridad 20, tras el `populate_roles` del core).
 
 ## 3. Esquema de datos
 
@@ -201,11 +205,12 @@ Cada fase tiene su propio plan de implementación y se revisa antes de pasar a l
 | Fase | Entrega | Criterio de cierre |
 | --- | --- | --- |
 | 0 | wp-env, PHPUnit, PHPCS (WPCS), esqueleto con autoloader, `Schema`, `uninstall.php` | El plugin activa, crea tablas y los tests pasan |
-| 1 | `ChannelAdapter`, registry, repositorios, `Queue`, `Publisher`, `GraphClient`, `FacebookPageAdapter` con token manual, `Logger` mínimo | Tests con mocks; en staging un post publica foto y comentario en una Página de prueba |
-| 2 | `Crypto`, `OAuth\Facebook`, `TokenManager`, cron de salud, avisos, "Reconectar" | OAuth completo en staging; revocar el token pausa el canal y avisa |
+| 1a | Contenedor perezoso, `Crypto` (adelantado: ningún token se guarda en claro ni en staging), contratos de canal y registry, repositorios, `GraphClient`, `Logger` mínimo, `Settings` mínimo | Tests con mocks; `DB_VERSION` 2 (índice `(status, scheduled_at)` en `jobs`) ejercita la ruta de upgrade |
+| 1b | `Templates` mínimo, `FacebookPageAdapter` con token manual, `Queue`, `Publisher`, disparador, CLI mínimo (`channels add/list`, `publish`, `status`) | En staging un post publica foto y comentario en una Página de prueba |
+| 2 | `OAuth\Facebook`, `TokenManager`, cron de salud, avisos, "Reconectar" | OAuth completo en staging; revocar el token pausa el canal y avisa |
 | 3 | `Rules`, `Templates`, `EditorIntegration` (bloques y clásico), REST de preview y estado | La vista previa coincide con lo publicado; la selección manual sobrescribe reglas |
 | 4 | `OAuth\Instagram` (ambos métodos), `InstagramAdapter`, contenedores, límites, renovación de token | Publicación en una cuenta de Instagram de prueba por ambos métodos |
 | 5 | `ImageProcessor` (JPEG, recorte/relleno, caché), `LinkInBio` | Imágenes fuera de rango salen válidas; `/ig` renderiza en móvil y modo oscuro |
 | 6 | `Wizard` (11 pasos), `Help` (Markdown) | Wizard completo en sitio limpio, reanudable por paso |
-| 7 | Columna y filtro de estado, log con CSV, `Notifications`, `CLI`, `SiteHealth`, import/export, README | Los comandos WP-CLI funcionan; export → import replica la configuración sin secretos |
+| 7 | Columna y filtro de estado, log con CSV, `Notifications`, `CLI` completo, `SiteHealth`, import/export, README | Los comandos WP-CLI funcionan; export → import replica la configuración sin secretos |
 | Opcional | Carrusel e historias de Instagram | — |
