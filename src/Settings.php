@@ -34,8 +34,10 @@ final class Settings {
 				'post_types' => array( 'post' ),
 			),
 			'templates'     => array(
-				'caption' => "{title}\n\n{excerpt}",
-				'comment' => '{permalink}',
+				'caption'         => "{title}\n\n{excerpt}",
+				'comment'         => '{permalink}',
+				'max_length'      => 0,
+				'social_fallback' => array( 'message', 'excerpt', 'title' ),
 			),
 			'image'         => array(
 				'fb_size'  => 'large',

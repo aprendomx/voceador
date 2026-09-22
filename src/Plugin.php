@@ -170,6 +170,10 @@ final class Plugin {
 		$this->factories[ GraphClient::class ] = static function ( Plugin $c ): GraphClient {
 			return new GraphClient( $c->get( Settings::class ), $c->get( Logger::class ) );
 		};
+
+		$this->factories[ Templates::class ] = static function ( Plugin $c ): Templates {
+			return new Templates( $c->get( Settings::class ) );
+		};
 	}
 
 	/**
