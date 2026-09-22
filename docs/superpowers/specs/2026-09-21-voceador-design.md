@@ -137,9 +137,10 @@ Tablas y opciones por sitio. Defaults de red en `site_option` `voceador_network_
 | `voceador_wizard` | Paso actual, pasos completados, `dismissed`, `completed_at` |
 | `voceador_notices` | Avisos persistentes del admin |
 | `voceador_crypto_seed` | Semilla de la clave de cifrado, solo si no hay salts utilizables (ver Cifrado) |
+| `voceador_cron_last_run` | Marca de la última ejecución de la cola, para detectar cron del sistema |
 | `voceador_network_defaults` (`site_option`) | Defaults de red |
 
-Transients: `voceador_lock_job_{id}`, `voceador_oauth_state_{hash}` (10 min, ligado al usuario), `voceador_activation_redirect`, `voceador_ig_usage_{channel_id}`.
+Transients: `voceador_lock_job_{id}`, `voceador_lock_comment_{id}`, `voceador_oauth_state_{hash}` (10 min, ligado al usuario), `voceador_activation_redirect`, `voceador_ig_usage_{channel_id}`.
 
 ### Post meta
 

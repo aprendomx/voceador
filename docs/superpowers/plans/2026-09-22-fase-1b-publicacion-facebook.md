@@ -3016,19 +3016,19 @@ Expected: `lint-and-test` en verde.
 ```bash
 npm run build:zip
 scp build-zip/voceador.zip USUARIO@SERVIDOR_STAGING:/tmp/voceador.zip
-ssh USUARIO@SERVIDOR_STAGING 'cd /ruta/al/wordpress && sudo -u www-data wp plugin install /tmp/voceador.zip --force --activate && sudo -u www-data wp plugin list --name=voceador --field=status && sudo -u www-data wp voceador status'
+ssh USUARIO@SERVIDOR_STAGING 'cd /ruta/al/wordpress && sudo -u www-data wp plugin install /tmp/voceador.zip --force --activate && sudo -u www-data wp plugin list --name=voceador --field=status && sudo -u www-data wp eval "var_dump( defined( \"WP_HTTP_BLOCK_EXTERNAL\" ), defined( \"DISABLE_WP_CRON\" ) );" && sudo -u www-data wp voceador status'
 ```
 
-Expected: `active`; `status` muestra 0 canales y cron disponible. Si la ruta de WordOps difiere, `ssh USUARIO@SERVIDOR_STAGING 'ls /var/www/*/htdocs/wp-config.php'` la revela. Si `wp` no está en el PATH de `www-data`, usa `sudo -u www-data /usr/local/bin/wp`.
+Expected: `active`; ambos `var_dump` en `bool(false)` (si `WP_HTTP_BLOCK_EXTERNAL` estuviera activo la Graph API no respondería; si `DISABLE_WP_CRON` lo estuviera, haría falta el cron del sistema del Step siguiente); `status` muestra 0 canales y **`Cron disponible: no`** (todavía no se ha ejecutado ningún trabajo que dispare `Queue::touch()`; es esperado hasta el primer `cron event run`). Si la ruta de WordOps difiere, `ssh USUARIO@SERVIDOR_STAGING 'ls /var/www/*/htdocs/wp-config.php'` la revela. Si `wp` no está en el PATH de `www-data`, usa `sudo -u www-data /usr/local/bin/wp`.
 
 - [ ] **Step 3: Conectar la Página (el usuario pega el token)**
 
 ```bash
-ssh USUARIO@SERVIDOR_STAGING 'cd /ruta/al/wordpress && sudo -u www-data wp voceador channels add-facebook --page-id=<PAGE_ID> --token=<PAGE_TOKEN> --alias="Prueba"'
+ssh USUARIO@SERVIDOR_STAGING 'cd /ruta/al/wordpress && printf "%s" "<PAGE_TOKEN>" | sudo -u www-data wp voceador channels add-facebook --page-id=<PAGE_ID> --token-file=- --alias="Prueba"'
 ssh USUARIO@SERVIDOR_STAGING 'cd /ruta/al/wordpress && sudo -u www-data wp voceador channels list'
 ```
 
-Expected: `Canal N conectado.` y la tabla con `remote_name` igual al nombre de la Página. Después del comando, limpia el historial de shell local si el token quedó en él (`history -d` o equivalente).
+`--token-file=-` evita que el token quede en el historial de shell o en el log de sudo. Expected: `Canal N conectado.` y la tabla con `remote_name` igual al nombre de la Página. Si aun así el token quedó en el historial de shell local, límpialo (`history -d` o equivalente).
 
 - [ ] **Step 4: Publicar una nota de prueba**
 
@@ -3038,6 +3038,14 @@ ssh USUARIO@SERVIDOR_STAGING 'cd /ruta/al/wordpress && sudo -u www-data wp vocea
 ```
 
 Elige un post que tenga imagen destacada. Expected: tabla con `status = published` y `remote_url` `https://www.facebook.com/<page>_<post>`. Abre la URL: debe verse la foto con el caption (título + extracto). Espera ~60 s (o fuerza el cron: `sudo -u www-data wp cron event run voceador_run_comment` no funciona con args; usa `sudo -u www-data wp cron event run --due-now`) y comprueba que aparece el comentario de la Página con el enlace.
+
+- [ ] **Step 4a: Publicar el mismo post otra vez es idempotente**
+
+```bash
+ssh USUARIO@SERVIDOR_STAGING 'cd /ruta/al/wordpress && sudo -u www-data wp voceador publish <POST_ID>'
+```
+
+Expected: tabla con `status = published` y el mismo `remote_url` que en el Step 4, sin una segunda petición a Graph (el trabajo ya tenía `remote_id`; ver `Publisher::execute()`).
 
 - [ ] **Step 5: Probar el disparador real**
 
