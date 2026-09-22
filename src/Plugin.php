@@ -143,6 +143,10 @@ final class Plugin {
 		$this->factories[ Crypto::class ] = static function (): Crypto {
 			return new Crypto();
 		};
+
+		$this->factories[ Settings::class ] = static function (): Settings {
+			return new Settings();
+		};
 	}
 
 	/**
