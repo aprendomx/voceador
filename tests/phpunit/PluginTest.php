@@ -65,4 +65,20 @@ class PluginTest extends WP_UnitTestCase {
 
 		$this->assertCount( 1, $installer_hooks );
 	}
+
+	public function test_every_phase_1a_service_resolves(): void {
+		$plugin = Plugin::boot();
+
+		foreach ( array(
+			\Voceador\Crypto::class,
+			\Voceador\Settings::class,
+			\Voceador\Channels\ChannelRegistry::class,
+			\Voceador\ChannelRepository::class,
+			\Voceador\JobRepository::class,
+			\Voceador\Logger::class,
+			\Voceador\GraphClient::class,
+		) as $id ) {
+			$this->assertInstanceOf( $id, $plugin->get( $id ) );
+		}
+	}
 }
