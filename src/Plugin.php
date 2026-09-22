@@ -166,6 +166,10 @@ final class Plugin {
 			global $wpdb;
 			return new Logger( $wpdb, $c->get( Schema::class ), (string) $c->get( Settings::class )->get( 'log.level' ) );
 		};
+
+		$this->factories[ GraphClient::class ] = static function ( Plugin $c ): GraphClient {
+			return new GraphClient( $c->get( Settings::class ), $c->get( Logger::class ) );
+		};
 	}
 
 	/**
