@@ -139,6 +139,10 @@ final class Plugin {
 		$this->factories[ Installer::class ] = static function ( Plugin $c ): Installer {
 			return new Installer( $c->get( Schema::class ) );
 		};
+
+		$this->factories[ Crypto::class ] = static function (): Crypto {
+			return new Crypto();
+		};
 	}
 
 	/**
