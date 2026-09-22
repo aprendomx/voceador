@@ -108,7 +108,7 @@ Tablas y opciones por sitio. Defaults de red en `site_option` `voceador_network_
 | `id` | BIGINT UNSIGNED PK AI | |
 | `post_id`, `channel_id` | BIGINT UNSIGNED | UNIQUE `(post_id, channel_id)`: idempotencia a nivel de BD |
 | `status` | VARCHAR(20) | `pending`, `running`, `published`, `failed`, `rate_limited`, `skipped` |
-| `comment_status` | VARCHAR(20) | `none`, `pending`, `done`, `failed` |
+| `comment_status` | VARCHAR(20) | `none`, `pending`, `running`, `done`, `failed` |
 | `remote_id` | VARCHAR(100) NULL | `post_id` de Facebook / `ig_media_id` |
 | `remote_url` | TEXT NULL | Permalink de la publicación |
 | `remote_comment_id` | VARCHAR(100) NULL | |

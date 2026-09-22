@@ -238,4 +238,25 @@ class JobRepositoryTest extends WP_UnitTestCase {
 		$this->assertSame( 'unverified', $job->error_code );
 		$this->assertStringNotContainsString( 'EAAAb1', $job->error_message );
 	}
+
+	public function test_claim_comment_and_stale_comment_running(): void {
+		global $wpdb;
+		$id = $this->repo->create_if_absent( 35, 1 );
+		$this->repo->mark_published( $id, 'r', '', true );
+
+		$this->assertTrue( $this->repo->claim_comment( $id ) );
+		$this->assertSame( 'running', $this->repo->find( $id )->comment_status );
+		$this->assertFalse( $this->repo->claim_comment( $id ), 'Un comentario en running no se puede reclamar de nuevo.' );
+
+		$not_published = $this->repo->create_if_absent( 35, 2 );
+		$this->assertFalse( $this->repo->claim_comment( $not_published ), 'El trabajo no está publicado.' );
+
+		$this->repo->mark_comment_failed( $id, 'boom' );
+		$this->assertTrue( $this->repo->claim_comment( $id ), 'Un comentario failed se puede reclamar.' );
+
+		$wpdb->update( ( new Schema( $wpdb ) )->table( 'jobs' ), array( 'updated_at' => '2020-01-01 00:00:00' ), array( 'id' => $id ) );
+
+		$ids = array_map( static fn( Job $j ) => $j->id, $this->repo->stale_comment_running( 900 ) );
+		$this->assertSame( array( $id ), $ids );
+	}
 }
