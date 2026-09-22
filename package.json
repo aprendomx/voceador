@@ -1,0 +1,18 @@
+{
+  "name": "voceador",
+  "version": "0.1.0",
+  "private": true,
+  "license": "GPL-2.0-or-later",
+  "scripts": {
+    "env:start": "wp-env start",
+    "env:stop": "wp-env stop",
+    "composer": "wp-env run tests-cli --env-cwd=wp-content/plugins/voceador composer",
+    "test": "wp-env run tests-cli --env-cwd=wp-content/plugins/voceador vendor/bin/phpunit",
+    "test:multisite": "wp-env run tests-cli --env-cwd=wp-content/plugins/voceador vendor/bin/phpunit -c tests/phpunit/multisite.xml",
+    "lint": "wp-env run tests-cli --env-cwd=wp-content/plugins/voceador vendor/bin/phpcs",
+    "lint:fix": "wp-env run tests-cli --env-cwd=wp-content/plugins/voceador vendor/bin/phpcbf"
+  },
+  "devDependencies": {
+    "@wordpress/env": "^10.0.0"
+  }
+}
