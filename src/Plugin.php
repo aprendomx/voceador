@@ -68,6 +68,10 @@ final class Plugin {
 	/**
 	 * Descarta la instancia. Solo para tests.
 	 *
+	 * No elimina los hooks registrados por la instancia anterior; en tests
+	 * `WP_UnitTestCase` restaura `$wp_filter` al terminar cada test, y en
+	 * producción no se invoca.
+	 *
 	 * @internal
 	 */
 	public static function reset(): void {

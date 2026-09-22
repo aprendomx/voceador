@@ -52,4 +52,17 @@ class PluginTest extends WP_UnitTestCase {
 	public function test_site_was_installed_during_bootstrap(): void {
 		$this->assertSame( Schema::DB_VERSION, get_option( VOCEADOR_PREFIX . 'db_version' ) );
 	}
+
+	public function test_reset_does_not_leak_hooks_between_tests(): void {
+		$callbacks = $GLOBALS['wp_filter']['init']->callbacks[0] ?? array();
+
+		$installer_hooks = array_filter(
+			$callbacks,
+			static function ( $callback ) {
+				return is_array( $callback['function'] ) && $callback['function'][0] instanceof Installer;
+			}
+		);
+
+		$this->assertCount( 1, $installer_hooks );
+	}
 }
