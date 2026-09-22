@@ -147,6 +147,21 @@ class JobRepositoryTest extends WP_UnitTestCase {
 		$this->assertSame( 0, $counts['published'] );
 	}
 
+	public function test_error_messages_are_redacted(): void {
+		$id     = $this->repo->create_if_absent( 21, 1 );
+		$secret = 'Bad token EAA' . str_repeat( 'Ab1', 10 );
+
+		$this->repo->mark_failed( $id, 'auth', $secret );
+		$message = $this->repo->find( $id )->error_message;
+		$this->assertStringNotContainsString( 'EAAAb1', $message );
+		$this->assertStringContainsString( '[redactado]', $message );
+
+		$this->repo->mark_comment_failed( $id, $secret );
+		$message = $this->repo->find( $id )->error_message;
+		$this->assertStringNotContainsString( 'EAAAb1', $message );
+		$this->assertStringContainsString( '[redactado]', $message );
+	}
+
 	public function test_transitions_are_idempotent(): void {
 		$id = $this->repo->create_if_absent( 20, 1 );
 

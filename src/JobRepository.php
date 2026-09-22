@@ -104,6 +104,9 @@ final class JobRepository {
 	/**
 	 * Reclama un trabajo para ejecutarlo. Solo un proceso puede ganar.
 	 *
+	 * Incrementa attempts; la política de límite de uso que no consume
+	 * intentos se resuelve en la fase 1b (ver plan).
+	 *
 	 * @param int $id Id.
 	 * @return bool true si este proceso lo reclamó.
 	 */
@@ -154,7 +157,7 @@ final class JobRepository {
 			array(
 				'status'        => 'failed',
 				'error_code'    => $error_code,
-				'error_message' => $error_message,
+				'error_message' => Logger::redact_string( $error_message ),
 			)
 		);
 	}
@@ -174,7 +177,7 @@ final class JobRepository {
 				'status'        => 'rate_limited',
 				'scheduled_at'  => $scheduled_at,
 				'error_code'    => 'rate_limited',
-				'error_message' => $error_message,
+				'error_message' => Logger::redact_string( $error_message ),
 			)
 		);
 	}
@@ -234,15 +237,19 @@ final class JobRepository {
 	/**
 	 * Registra un fallo al comentar sin tocar el estado principal.
 	 *
+	 * Devuelve false solo si la consulta falló, igual que set(): no se basa en
+	 * rows_affected porque repetir el mismo error no cambia ninguna columna y
+	 * no debe interpretarse como que el trabajo no existe.
+	 *
 	 * @param int    $id            Id.
-	 * @param string $error_message Mensaje.
-	 * @return bool
+	 * @param string $error_message Mensaje para la redacción.
+	 * @return bool true salvo error de consulta.
 	 */
 	public function mark_comment_failed( int $id, string $error_message ): bool {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- El nombre de tabla viene de Schema::table(), no de entrada de usuario.
-		$this->wpdb->query( $this->wpdb->prepare( "UPDATE {$this->table()} SET comment_status = 'failed', comment_attempts = comment_attempts + 1, error_message = %s, updated_at = %s WHERE id = %d", $error_message, current_time( 'mysql', true ), $id ) );
+		$result = $this->wpdb->query( $this->wpdb->prepare( "UPDATE {$this->table()} SET comment_status = 'failed', comment_attempts = comment_attempts + 1, error_message = %s, updated_at = %s WHERE id = %d", Logger::redact_string( $error_message ), current_time( 'mysql', true ), $id ) );
 
-		return 1 === $this->wpdb->rows_affected;
+		return false !== $result;
 	}
 
 	/**
