@@ -29,6 +29,7 @@ tests_add_filter(
 	'muplugins_loaded',
 	static function () use ( $voceador_root ): void {
 		require $voceador_root . '/voceador.php';
+		require $voceador_root . '/tests/phpunit/Fixtures/FakeAdapter.php';
 	}
 );
 

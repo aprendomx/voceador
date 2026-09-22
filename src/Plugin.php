@@ -8,9 +8,20 @@
 namespace Voceador;
 
 /**
- * Instancia los servicios una sola vez y registra los hooks.
+ * Contenedor perezoso: instancia cada servicio la primera vez que se pide.
+ *
+ * Es el único punto del plugin con estado global. Los servicios reciben sus
+ * dependencias por constructor y, si implementan Registrable, registran sus
+ * propios hooks al arrancar.
  */
 final class Plugin {
+
+	/**
+	 * Servicios que se instancian en boot() para registrar hooks.
+	 */
+	private const REGISTRABLES = array(
+		Installer::class,
+	);
 
 	/**
 	 * Instancia única del contenedor.
@@ -20,27 +31,24 @@ final class Plugin {
 	private static ?Plugin $instance = null;
 
 	/**
-	 * Esquema de datos.
+	 * Factories por id de servicio.
 	 *
-	 * @var Schema
+	 * @var array<string, callable>
 	 */
-	private Schema $schema;
+	private array $factories = array();
 
 	/**
-	 * Instalador.
+	 * Servicios ya instanciados.
 	 *
-	 * @var Installer
+	 * @var array<string, object>
 	 */
-	private Installer $installer;
+	private array $services = array();
 
 	/**
 	 * Constructor.
 	 */
 	private function __construct() {
-		global $wpdb;
-
-		$this->schema    = new Schema( $wpdb );
-		$this->installer = new Installer( $this->schema );
+		$this->register_factories();
 	}
 
 	/**
@@ -58,12 +66,56 @@ final class Plugin {
 	}
 
 	/**
+	 * Descarta la instancia. Solo para tests.
+	 *
+	 * No elimina los hooks registrados por la instancia anterior; en tests
+	 * `WP_UnitTestCase` restaura `$wp_filter` al terminar cada test, y en
+	 * producción no se invoca.
+	 *
+	 * @internal
+	 */
+	public static function reset(): void {
+		self::$instance = null;
+	}
+
+	/**
+	 * Devuelve un servicio, creándolo la primera vez.
+	 *
+	 * @param string $id Id del servicio (su nombre de clase).
+	 * @return object
+	 * @throws \InvalidArgumentException Si no hay factory registrada para el id.
+	 */
+	public function get( string $id ): object {
+		if ( isset( $this->services[ $id ] ) ) {
+			return $this->services[ $id ];
+		}
+
+		if ( ! isset( $this->factories[ $id ] ) ) {
+			throw new \InvalidArgumentException( 'Servicio desconocido: ' . esc_html( $id ) );
+		}
+
+		$this->services[ $id ] = ( $this->factories[ $id ] )( $this );
+
+		return $this->services[ $id ];
+	}
+
+	/**
+	 * Indica si existe una factory para el id.
+	 *
+	 * @param string $id Id del servicio.
+	 * @return bool
+	 */
+	public function has( string $id ): bool {
+		return isset( $this->factories[ $id ] );
+	}
+
+	/**
 	 * Esquema de datos.
 	 *
 	 * @return Schema
 	 */
 	public function schema(): Schema {
-		return $this->schema;
+		return $this->get( Schema::class );
 	}
 
 	/**
@@ -72,14 +124,63 @@ final class Plugin {
 	 * @return Installer
 	 */
 	public function installer(): Installer {
-		return $this->installer;
+		return $this->get( Installer::class );
 	}
 
 	/**
-	 * Registra los hooks del núcleo.
+	 * Declara cómo se construye cada servicio.
+	 */
+	private function register_factories(): void {
+		$this->factories[ Schema::class ] = static function (): Schema {
+			global $wpdb;
+			return new Schema( $wpdb );
+		};
+
+		$this->factories[ Installer::class ] = static function ( Plugin $c ): Installer {
+			return new Installer( $c->get( Schema::class ) );
+		};
+
+		$this->factories[ Crypto::class ] = static function (): Crypto {
+			return new Crypto();
+		};
+
+		$this->factories[ Settings::class ] = static function (): Settings {
+			return new Settings();
+		};
+
+		$this->factories[ Channels\ChannelRegistry::class ] = static function (): Channels\ChannelRegistry {
+			return new Channels\ChannelRegistry();
+		};
+
+		$this->factories[ ChannelRepository::class ] = static function ( Plugin $c ): ChannelRepository {
+			global $wpdb;
+			return new ChannelRepository( $wpdb, $c->get( Schema::class ), $c->get( Crypto::class ) );
+		};
+
+		$this->factories[ JobRepository::class ] = static function ( Plugin $c ): JobRepository {
+			global $wpdb;
+			return new JobRepository( $wpdb, $c->get( Schema::class ) );
+		};
+
+		$this->factories[ Logger::class ] = static function ( Plugin $c ): Logger {
+			global $wpdb;
+			return new Logger( $wpdb, $c->get( Schema::class ), (string) $c->get( Settings::class )->get( 'log.level' ) );
+		};
+
+		$this->factories[ GraphClient::class ] = static function ( Plugin $c ): GraphClient {
+			return new GraphClient( $c->get( Settings::class ), $c->get( Logger::class ) );
+		};
+	}
+
+	/**
+	 * Pide a cada servicio Registrable que enganche sus hooks.
 	 */
 	private function register_hooks(): void {
-		add_action( 'init', array( $this->installer, 'maybe_install' ), 0 );
-		add_action( 'wp_initialize_site', array( $this->installer, 'on_new_site' ), 20 );
+		foreach ( self::REGISTRABLES as $id ) {
+			$service = $this->get( $id );
+			if ( $service instanceof Registrable ) {
+				$service->register_hooks();
+			}
+		}
 	}
 }

@@ -10,7 +10,7 @@ namespace Voceador;
 /**
  * Decide cuándo crear el esquema y conceder la capacidad.
  */
-final class Installer {
+final class Installer implements Registrable {
 
 	/**
 	 * Capacidad necesaria para gestionar los ajustes del plugin.
@@ -31,6 +31,14 @@ final class Installer {
 	 */
 	public function __construct( Schema $schema ) {
 		$this->schema = $schema;
+	}
+
+	/**
+	 * Instalación perezosa en cada sitio y en los sitios nuevos de la red.
+	 */
+	public function register_hooks(): void {
+		add_action( 'init', array( $this, 'maybe_install' ), 0 );
+		add_action( 'wp_initialize_site', array( $this, 'on_new_site' ), 20 );
 	}
 
 	/**

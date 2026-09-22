@@ -172,4 +172,48 @@ class SchemaTest extends WP_UnitTestCase {
 		$this->assertSame( '', $channel->health );
 		$this->assertSame( '', $channel->settings );
 	}
+
+	public function test_db_version_is_2(): void {
+		$this->assertSame( '2', Schema::DB_VERSION );
+	}
+
+	public function test_jobs_has_status_scheduled_index(): void {
+		$this->assertTrue( $this->schema->has_index( 'jobs', 'status_scheduled' ) );
+	}
+
+	public function test_channels_has_no_redundant_type_index(): void {
+		$this->assertTrue( $this->schema->has_index( 'channels', 'type_remote' ) );
+		$this->assertFalse( $this->schema->has_index( 'channels', 'type' ) );
+	}
+
+	public function test_migrate_from_1_drops_type_index(): void {
+		global $wpdb;
+		$table = $this->schema->table( 'channels' );
+		// El ALTER TABLE es DDL y hace un commit implícito en MySQL/MariaDB: escapa al
+		// rollback transaccional de WP_UnitTestCase. Si una aserción de abajo fallara
+		// antes de llamar a migrate(), el índice añadido aquí quedaría en la tabla para
+		// el resto de la suite; el finally se asegura de que migrate() se ejecute pase
+		// lo que pase (es idempotente, así que repetirlo no hace daño).
+		$wpdb->query( "ALTER TABLE {$table} ADD KEY type (type)" );
+
+		try {
+			$this->assertTrue( $this->schema->has_index( 'channels', 'type' ) );
+
+			$this->schema->migrate( '1', '2' );
+
+			$this->assertFalse( $this->schema->has_index( 'channels', 'type' ) );
+		} finally {
+			$this->schema->migrate( '1', '2' );
+		}
+	}
+
+	public function test_migrate_is_a_noop_when_already_current(): void {
+		$this->schema->migrate( '2', '2' );
+		$this->assertSame( array(), $this->schema->pending_changes() );
+	}
+
+	public function test_has_index_rejects_unknown_tables(): void {
+		$this->expectException( InvalidArgumentException::class );
+		$this->schema->has_index( 'posts', 'PRIMARY' );
+	}
 }

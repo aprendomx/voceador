@@ -99,7 +99,7 @@ Tablas y opciones por sitio. Defaults de red en `site_option` `voceador_network_
 | `settings` | LONGTEXT | JSON con overrides del canal (reglas, plantillas, imagen, ejecución, UTM) |
 | `created_at`, `updated_at` | DATETIME | UTC |
 
-Índices: `type`, `status`, UNIQUE `(type, remote_id)`.
+Índices: `status`, UNIQUE `(type, remote_id)` (el índice `type` se eliminó en el esquema v2 por redundante).
 
 **`voceador_jobs`** (una fila por post + canal)
 
@@ -120,7 +120,7 @@ Tablas y opciones por sitio. Defaults de red en `site_option` `voceador_network_
 | `source` | VARCHAR(20) | `auto`, `manual`, `cli`, `test` |
 | `created_at`, `updated_at` | DATETIME | UTC |
 
-Índices: `status`, `(channel_id, status)`, `scheduled_at`.
+Índices: `status`, `(channel_id, status)`, `scheduled_at`, `(status, scheduled_at)`.
 
 **`voceador_log`**
 
@@ -136,6 +136,7 @@ Tablas y opciones por sitio. Defaults de red en `site_option` `voceador_network_
 | `voceador_link_in_bio` | Activación, slug(s), modo (por cuenta/compartida), UTM, nº de tarjetas, usar imagen de Instagram |
 | `voceador_wizard` | Paso actual, pasos completados, `dismissed`, `completed_at` |
 | `voceador_notices` | Avisos persistentes del admin |
+| `voceador_crypto_seed` | Semilla de la clave de cifrado, solo si no hay salts utilizables (ver Cifrado) |
 | `voceador_network_defaults` (`site_option`) | Defaults de red |
 
 Transients: `voceador_lock_job_{id}`, `voceador_oauth_state_{hash}` (10 min, ligado al usuario), `voceador_activation_redirect`, `voceador_ig_usage_{channel_id}`.
@@ -156,7 +157,7 @@ El estado por canal vive en `voceador_jobs`, no en post meta.
 
 ### Cifrado
 
-`sodium_crypto_secretbox` con nonce aleatorio por valor; formato `v1:` + base64( nonce + cifrado ). Clave: `VOCEADOR_ENCRYPTION_KEY` si existe; si no, `sodium_crypto_generichash( AUTH_KEY . SECURE_AUTH_KEY )`. Si el descifrado falla (salts cambiadas), el canal pasa a `error` con aviso "Reconectar"; nunca un fatal.
+`sodium_crypto_secretbox` con nonce aleatorio por valor; formato `v1:` + base64( nonce + cifrado ). La clave de 32 bytes es `sodium_crypto_generichash( material )`, donde `material` es, por orden: `VOCEADOR_ENCRYPTION_KEY` si está definida (cualquier longitud); si no, las constantes `AUTH_KEY . SECURE_AUTH_KEY` cuando ambas existen y no son el marcador por defecto de `wp-config-sample.php`; si no, una semilla aleatoria persistida una sola vez en la opción `voceador_crypto_seed` (autoload no). No se usa `wp_salt()` porque con salts de marcador devuelve un valor aleatorio por proceso. Si el descifrado falla (salts cambiadas), el canal pasa a `error` con aviso "Reconectar"; nunca un fatal.
 
 ## 4. Errores y reintentos
 

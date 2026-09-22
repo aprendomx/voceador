@@ -2,7 +2,7 @@
 
 **Voceador – Autopublicación de notas en redes sociales** es un plugin de WordPress que anuncia automáticamente en Páginas de Facebook y cuentas de Instagram cada nota que se publica por primera vez en un sitio de noticias.
 
-> Estado: fase 0 completada (entorno, esquema de datos, instalación y desinstalación). El plugin todavía no publica en redes.
+> Estado: fase 1a completada (contenedor, cifrado, ajustes, contratos de canal, repositorios, log y cliente de Graph API). El plugin todavía no publica en redes; eso llega en la fase 1b.
 
 ## Documentación
 
@@ -37,6 +37,10 @@ npm run lint:fix               # corrige el formato automáticamente
 `npm run test` excluye el grupo `ms-required`; esos tests solo corren con `npm run test:multisite`.
 
 Para probar la desinstalación usa siempre `wp plugin uninstall voceador --skip-delete`: la carpeta del plugin en wp-env es este repositorio y sin ese flag WP-CLI borraría los archivos.
+
+## Cifrado de credenciales
+
+Los tokens de los canales se cifran con una clave derivada de `AUTH_KEY`/`SECURE_AUTH_KEY` (o de la constante `VOCEADOR_ENCRYPTION_KEY`, si se define; es la opción recomendada). Rotar esas salts invalida todos los canales conectados, que habrá que reconectar.
 
 ## Licencia
 

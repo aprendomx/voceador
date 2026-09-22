@@ -56,9 +56,15 @@ jobs:
           npx wp-env run cli wp plugin activate voceador
           npx wp-env run cli wp eval 'do_action("init");'
           test "$(npx wp-env run cli wp db query "SHOW TABLES LIKE '%voceador%'" --skip-column-names | grep -c voceador)" -eq 3
-          test "$(npx wp-env run cli wp option get voceador_db_version)" = "1"
+          test "$(npx wp-env run cli wp option get voceador_db_version)" = "2"
           npx wp-env run cli wp cap list administrator | grep -q '^voceador_manage$'
+          npx wp-env run cli wp option update voceador_db_version 1
+          npx wp-env run cli wp db query "ALTER TABLE wp_voceador_channels ADD KEY type (type)"
+          npx wp-env run cli wp eval 'do_action("init");'
+          test "$(npx wp-env run cli wp option get voceador_db_version)" = "2"
+          test -z "$(npx wp-env run cli wp db query "SHOW INDEX FROM wp_voceador_channels WHERE Key_name='type'" --skip-column-names)"
           npx wp-env run cli wp plugin deactivate voceador
           npx wp-env run cli wp plugin uninstall voceador --skip-delete
           test -z "$(npx wp-env run cli wp db query "SHOW TABLES LIKE '%voceador%'" --skip-column-names)"
           ! npx wp-env run cli wp option get voceador_db_version
+          ! npx wp-env run cli wp option get voceador_crypto_seed
