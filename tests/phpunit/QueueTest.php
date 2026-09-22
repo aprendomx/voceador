@@ -125,8 +125,9 @@ class QueueTest extends WP_UnitTestCase {
 		$this->assertNotFalse( wp_next_scheduled( Queue::HOOK_RUN, array( $limited ) ) );
 		$this->assertSame( 'unverified', $this->jobs->find( $stale )->error_code );
 		$this->assertSame( 'running', $this->jobs->find( $fresh )->status );
-		$this->assertSame( 'failed', $this->jobs->find( $stale_comment )->comment_status );
+		$this->assertSame( 'pending', $this->jobs->find( $stale_comment )->comment_status, 'El comentario atascado se reprograma en vez de quedar failed.' );
 		$this->assertSame( 'published', $this->jobs->find( $stale_comment )->status, 'El comentario atascado no toca el estado principal.' );
+		$this->assertNotFalse( wp_next_scheduled( Queue::HOOK_COMMENT, array( $stale_comment ) ), 'El comentario atascado queda reprogramado.' );
 		$this->assertEqualsWithDelta( time(), (int) get_option( VOCEADOR_PREFIX . Queue::OPTION_LAST_RUN ), 5 );
 	}
 }

@@ -67,7 +67,7 @@ final class Publisher implements Registrable {
 	 * @param int  $job_id Id.
 	 * @param bool $force  Si true, permite reintentar un trabajo en estado "unverified"
 	 *                     (publicación que pudo haber llegado a Meta sin confirmación).
-	 * @return string Estado final del trabajo, o "locked" / "missing" / "unverified" si no se ejecutó.
+	 * @return string Estado final del trabajo, o "locked" / "unclaimable" / "missing" / "unverified" si no se ejecutó.
 	 */
 	public function run( int $job_id, bool $force = false ): string {
 		$lock = VOCEADOR_PREFIX . 'lock_job_' . $job_id;
@@ -78,10 +78,29 @@ final class Publisher implements Registrable {
 		set_transient( $lock, time(), self::LOCK_TTL );
 
 		try {
-			return $this->execute( $job_id, $force );
+			try {
+				return $this->execute( $job_id, $force );
+			} catch ( \Throwable $e ) {
+				$this->logger->error( 'exception', $e->getMessage(), array( 'job_id' => $job_id ) );
+
+				$job = $this->jobs->find( $job_id );
+				// 'running' solo es posible si claim() ganó en esta misma ejecución: el
+				// trabajo quedó reclamado y la excepción interrumpió execute() antes de
+				// que llegara a su propio mark_failed()/mark_published().
+				if ( null !== $job && 'running' === $job->status ) {
+					$channel = $this->channels->find( $job->channel_id );
+					if ( null !== $channel ) {
+						$this->handle_error( $job, $channel, new \WP_Error( 'fatal', $e->getMessage(), array( 'class' => 'fatal' ) ) );
+					} else {
+						$this->jobs->mark_failed( $job->id, 'fatal', $e->getMessage() );
+					}
+				}
+
+				return 'failed';
+			}
 		} finally {
 			delete_transient( $lock );
-		}
+		}//end try
 	}
 
 	/**
@@ -99,7 +118,20 @@ final class Publisher implements Registrable {
 		set_transient( $lock, time(), self::LOCK_TTL );
 
 		try {
-			return $this->execute_comment( $job_id );
+			try {
+				return $this->execute_comment( $job_id );
+			} catch ( \Throwable $e ) {
+				$this->logger->error( 'exception', $e->getMessage(), array( 'job_id' => $job_id ) );
+
+				$job = $this->jobs->find( $job_id );
+				// Mismo razonamiento que en run(): 'running' solo es posible si claim_comment()
+				// ganó en esta misma ejecución.
+				if ( null !== $job && 'running' === $job->comment_status ) {
+					$this->jobs->mark_comment_failed( $job->id, $e->getMessage() );
+				}
+
+				return 'failed';
+			}
 		} finally {
 			delete_transient( $lock );
 		}
@@ -115,6 +147,9 @@ final class Publisher implements Registrable {
 	 * @return array<int, string> Canal => estado.
 	 */
 	public function publish_now( int $post_id, ?int $channel_id = null, string $source = 'manual', bool $force = false ): array {
+		// La ejecución manual también cuenta como actividad de la cola para cron_available().
+		$this->queue->touch();
+
 		$targets = null === $channel_id ? $this->channels->active() : array_filter( array( $this->channels->find( $channel_id ) ) );
 		$result  = array();
 
@@ -302,13 +337,22 @@ final class Publisher implements Registrable {
 		}
 
 		if ( ! $this->jobs->claim( $job->id ) ) {
-			return 'locked';
+			// El trabajo pudo perder la carrera por dos motivos distintos: otro proceso lo
+			// tiene en running ahora mismo ("locked", reintentable más tarde), o ya no está
+			// en un estado reclamable (por ejemplo, otro proceso lo publicó entre el find()
+			// de arriba y este claim(); "unclaimable", no es un fallo de este job).
+			$reclaimed = $this->jobs->find( $job->id );
+			return null !== $reclaimed && 'running' === $reclaimed->status ? 'locked' : 'unclaimable';
 		}
 
 		$adapter = $this->registry->adapter( $channel->type );
 
 		$usage = $adapter->usage_limits( $channel );
 		if ( null !== $usage && ! $usage->has_capacity() ) {
+			// La primera vez que un trabajo cae en rate_limited ya consumió un intento en
+			// el claim() de arriba; los siguientes claim() desde rate_limited no cuentan
+			// (ver JobRepository::claim()), así que no se pierde presupuesto de reintentos
+			// por esperar cupo.
 			$wait = null !== $usage->resets_at ? max( 60, $usage->resets_at - time() ) : self::DEFAULT_RATE_LIMIT_WAIT;
 			$this->jobs->mark_rate_limited( $job->id, gmdate( 'Y-m-d H:i:s', time() + $wait ), __( 'Se alcanzó el límite de publicaciones del canal.', 'voceador' ) );
 			$this->queue->schedule_job( $job->id, $wait );
@@ -387,6 +431,9 @@ final class Publisher implements Registrable {
 
 		$retries = (int) $this->settings->get( 'execution.retries', $channel->settings );
 		if ( $job->comment_attempts >= $retries ) {
+			// set_comment_status() y no mark_comment_failed(): los intentos ya están
+			// agotados, incrementar de nuevo comment_attempts distorsionaría el contador.
+			$this->jobs->set_comment_status( $job->id, 'failed' );
 			return 'failed';
 		}
 

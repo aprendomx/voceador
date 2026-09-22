@@ -166,7 +166,11 @@ final class Queue implements Registrable {
 	}
 
 	/**
-	 * Reprograma trabajos vencidos y marca como no verificados/fallidos los atascados.
+	 * Reprograma trabajos vencidos y marca como no verificados los atascados en publicación.
+	 *
+	 * Un comentario atascado en running (comment_status) se reprograma en vez de dejarse
+	 * en failed: se acepta el riesgo de un comentario duplicado (el radio de impacto es
+	 * un comentario) frente al de perderlo sin más reintentos.
 	 *
 	 * @return array{pending:int,rate_limited:int,stale:int,stale_comments:int}
 	 */
@@ -206,9 +210,11 @@ final class Queue implements Registrable {
 
 		foreach ( $this->jobs->stale_comment_running( self::STALE_AFTER ) as $job ) {
 			$this->jobs->mark_comment_failed( $job->id, __( 'El proceso se interrumpió durante el comentario.', 'voceador' ) );
+			$this->jobs->retry_comment( $job->id );
+			$this->schedule_comment( $job->id, 0 );
 			$this->logger->warning(
 				'comment_stale',
-				'Comentario atascado en running marcado como fallido',
+				'Comentario atascado en running reprogramado',
 				array(
 					'job_id'     => $job->id,
 					'post_id'    => $job->post_id,

@@ -82,7 +82,7 @@ class JobRepositoryTest extends WP_UnitTestCase {
 		$job = $this->repo->find( $id );
 		$this->assertSame( 'failed', $job->comment_status );
 		$this->assertSame( 1, $job->comment_attempts );
-		$this->assertSame( 'spam', $job->error_message );
+		$this->assertSame( 'Comentario: spam', $job->error_message, 'Prefijo para distinguirlo del error de la publicación, que comparte columna.' );
 		$this->assertSame( 'published', $job->status, 'El fallo del comentario no toca el estado principal.' );
 
 		$this->assertTrue( $this->repo->mark_comment_done( $id, '1001_2002_3003' ) );
@@ -258,5 +258,26 @@ class JobRepositoryTest extends WP_UnitTestCase {
 
 		$ids = array_map( static fn( Job $j ) => $j->id, $this->repo->stale_comment_running( 900 ) );
 		$this->assertSame( array( $id ), $ids );
+	}
+
+	public function test_set_comment_status_does_not_touch_attempts_or_error(): void {
+		$id = $this->repo->create_if_absent( 36, 1 );
+		$this->repo->mark_published( $id, 'r', '', true );
+		$this->repo->mark_comment_failed( $id, 'boom' );
+
+		$this->assertTrue( $this->repo->set_comment_status( $id, 'failed' ) );
+
+		$job = $this->repo->find( $id );
+		$this->assertSame( 'failed', $job->comment_status );
+		$this->assertSame( 1, $job->comment_attempts, 'A diferencia de mark_comment_failed(), no incrementa attempts.' );
+		$this->assertSame( 'Comentario: boom', $job->error_message, 'No toca error_message.' );
+	}
+
+	public function test_skipped_is_claimable(): void {
+		$id = $this->repo->create_if_absent( 37, 1 );
+		$this->repo->mark_skipped( $id, 'Sin imagen destacada' );
+
+		$this->assertTrue( $this->repo->claim( $id ), 'skipped es reclamable (solo por una ejecución explícita).' );
+		$this->assertSame( 'running', $this->repo->find( $id )->status );
 	}
 }

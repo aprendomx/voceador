@@ -6,6 +6,7 @@
 use Voceador\ChannelRepository;
 use Voceador\Channels\ChannelRegistry;
 use Voceador\Channels\FacebookPageAdapter;
+use Voceador\Channels\UsageLimits;
 use Voceador\Crypto;
 use Voceador\GraphClient;
 use Voceador\JobRepository;
@@ -357,5 +358,155 @@ class PublisherTest extends WP_UnitTestCase {
 			)
 		);
 		$this->assertSame( 'published', $this->publisher->run( $id, true ) );
+	}
+
+	public function test_skipped_job_can_be_rerun_after_adding_image(): void {
+		$plain = self::factory()->post->create(
+			array(
+				'post_status' => 'publish',
+				'post_title'  => 'Sin foto',
+			)
+		);
+		$id    = $this->jobs->create_if_absent( $plain, $this->channel_id );
+
+		$this->assertSame( 'skipped', $this->publisher->run( $id ) );
+		$this->assertSame( 'skipped', $this->jobs->find( $id )->status );
+
+		$attach = self::factory()->attachment->create_upload_object( DIR_TESTDATA . '/images/test-image.jpg', $plain );
+		set_post_thumbnail( $plain, $attach );
+
+		$this->responses[] = GraphResponses::ok(
+			array(
+				'id'      => '7',
+				'post_id' => '1001_7',
+			)
+		);
+		$this->assertSame( 'published', $this->publisher->run( $id ), 'skipped es reclamable tras añadir la imagen.' );
+		$this->assertSame( 'published', $this->jobs->find( $id )->status );
+	}
+
+	public function test_run_exception_marks_job_failed_not_running(): void {
+		global $wpdb;
+		$schema    = new Schema( $wpdb );
+		$logger    = new Logger( $wpdb, $schema, 'debug' );
+		$registry  = new ChannelRegistry(
+			array(
+				'boom' => static function () {
+					throw new \RuntimeException( 'kaboom' );
+				},
+			)
+		);
+		$queue     = new Queue( $this->jobs, $logger );
+		$publisher = new Publisher( $this->jobs, $this->channels, $registry, new Templates( $this->settings ), $this->settings, $logger, $queue );
+
+		$channel_id = $this->channels->insert(
+			array(
+				'type'        => 'boom',
+				'alias'       => 'Boom',
+				'remote_id'   => '9009',
+				'credentials' => array(),
+			)
+		);
+		$id         = $this->jobs->create_if_absent( $this->post_id, $channel_id );
+
+		$this->assertSame( 'failed', $publisher->run( $id ) );
+
+		$job = $this->jobs->find( $id );
+		$this->assertSame( 'failed', $job->status, 'La excepción no debe dejar el trabajo en running.' );
+		$this->assertSame( 'fatal', $job->error_code );
+		$this->assertFalse( get_transient( VOCEADOR_PREFIX . 'lock_job_' . $id ), 'El lock se libera aunque la ejecución lance.' );
+	}
+
+	public function test_execute_comment_exhausted_attempts_sets_failed_without_incrementing(): void {
+		$this->settings->update( array( 'execution' => array( 'retries' => 1 ) ) );
+		$this->responses[] = GraphResponses::ok(
+			array(
+				'id'      => '7',
+				'post_id' => '1001_7',
+			)
+		);
+		$id                = $this->job();
+		$this->publisher->run( $id );
+
+		// Deja comment_attempts en el tope (retries = 1) sin llegar a publicarlo.
+		$this->jobs->mark_comment_failed( $id, 'x' );
+		$this->assertSame( 1, $this->jobs->find( $id )->comment_attempts );
+
+		$this->assertSame( 'failed', $this->publisher->run_comment( $id ) );
+		$job = $this->jobs->find( $id );
+		$this->assertSame( 'failed', $job->comment_status );
+		$this->assertSame( 1, $job->comment_attempts, 'El guard de intentos agotados no incrementa comment_attempts.' );
+	}
+
+	public function test_usage_limits_without_capacity_rate_limits_without_extra_attempt(): void {
+		global $wpdb;
+		$schema    = new Schema( $wpdb );
+		$logger    = new Logger( $wpdb, $schema, 'debug' );
+		$adapter   = new class() extends \Voceador\Tests\Fixtures\FakeAdapter {
+			public function usage_limits( \Voceador\Channels\Channel $c ): ?UsageLimits { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Firma de la interfaz.
+				return new UsageLimits( 25, 25, time() + 600 );
+			}
+		};
+		$registry  = new ChannelRegistry( array( 'capped' => static fn() => $adapter ) );
+		$queue     = new Queue( $this->jobs, $logger );
+		$publisher = new Publisher( $this->jobs, $this->channels, $registry, new Templates( $this->settings ), $this->settings, $logger, $queue );
+
+		$channel_id = $this->channels->insert(
+			array(
+				'type'        => 'capped',
+				'alias'       => 'Capped',
+				'remote_id'   => '3003',
+				'credentials' => array(),
+			)
+		);
+		$id         = $this->jobs->create_if_absent( $this->post_id, $channel_id );
+
+		$this->assertSame( 'rate_limited', $publisher->run( $id ) );
+		$job = $this->jobs->find( $id );
+		$this->assertSame( 'rate_limited', $job->status );
+		$this->assertSame( 1, $job->attempts );
+		$this->assertEqualsWithDelta( time() + 600, wp_next_scheduled( Queue::HOOK_RUN, array( $id ) ), 5 );
+
+		$this->assertSame( 'rate_limited', $publisher->run( $id ), 'Sigue sin cupo en la siguiente ejecución.' );
+		$this->assertSame( 1, $this->jobs->find( $id )->attempts, 'Reanudar desde rate_limited no consume otro intento.' );
+	}
+
+	/**
+	 * Casos de handle_error() disparados a través de run(): 'graph' simula la respuesta
+	 * de la Graph API; 'media' sustituye la imagen destacada por un formato no soportado
+	 * antes de correr, que es el único de los cuatro que no pasa por una respuesta HTTP.
+	 *
+	 * @return array
+	 */
+	public function handle_error_via_run_cases(): array {
+		return array(
+			'permission_403_200' => array( 'graph', 403, 200, 'Permissions error', 'permission', true ),
+			'media_webp'         => array( 'media', 0, 0, '', 'media', false ),
+			'fatal_400_100'      => array( 'graph', 400, 100, 'Unsupported get request', 'fatal', false ),
+			'spam_368_publish'   => array( 'graph', 400, 368, 'Blocked as spam', 'spam', false ),
+		);
+	}
+
+	/**
+	 * @dataProvider handle_error_via_run_cases
+	 */
+	public function test_handle_error_classes_via_run( string $kind, int $http, int $code, string $message, string $expected_error_code, bool $expect_channel_paused ): void {
+		$id = $this->job();
+
+		if ( 'media' === $kind ) {
+			$attach = self::factory()->attachment->create_upload_object( DIR_TESTDATA . '/images/test-image.webp', $this->post_id );
+			set_post_thumbnail( $this->post_id, $attach );
+		} else {
+			$this->responses[] = GraphResponses::error( $http, $code, $message );
+		}
+
+		$this->assertSame( 'failed', $this->publisher->run( $id ) );
+
+		$job = $this->jobs->find( $id );
+		$this->assertSame( 'failed', $job->status );
+		$this->assertSame( $expected_error_code, $job->error_code );
+
+		$channel = $this->channels->find( $this->channel_id );
+		$this->assertSame( $expect_channel_paused ? 'paused' : 'active', $channel->status );
 	}
 }
