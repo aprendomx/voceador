@@ -50,6 +50,7 @@ class UninstallerTest extends WP_UnitTestCase {
 		update_option( VOCEADOR_PREFIX . 'settings', array( 'rules' => array() ), false );
 		update_option( VOCEADOR_PREFIX . 'app', array( 'app_id' => '1' ), false );
 		add_option( VOCEADOR_PREFIX . 'crypto_seed', '', '', false );
+		add_option( VOCEADOR_PREFIX . 'cron_last_run', time(), '', false );
 		set_transient( VOCEADOR_PREFIX . 'lock_job_5', 1, 60 );
 
 		Uninstaller::clean_site();

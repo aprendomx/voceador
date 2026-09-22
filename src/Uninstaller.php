@@ -15,7 +15,7 @@ final class Uninstaller {
 	/**
 	 * Nombres cortos de las opciones del plugin.
 	 */
-	public const OPTIONS = array( 'db_version', 'app', 'settings', 'link_in_bio', 'wizard', 'notices', 'crypto_seed' );
+	public const OPTIONS = array( 'db_version', 'app', 'settings', 'link_in_bio', 'wizard', 'notices', 'crypto_seed', 'cron_last_run' );
 
 	/**
 	 * Metas de post del plugin.
