@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: voceador
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: voceador/package-lock.json
+
+      - name: Instalar dependencias de Node
+        working-directory: voceador
+        run: npm ci
+
+      - name: Arrancar wp-env
+        working-directory: voceador
+        run: npm run env:start
+
+      - name: Instalar dependencias de desarrollo de PHP
+        working-directory: voceador
+        run: npm run composer -- install --no-interaction
+
+      - name: Lint
+        working-directory: voceador
+        run: npm run lint
+
+      - name: Tests (single site)
+        working-directory: voceador
+        run: npm run test
+
+      - name: Tests (Multisite)
+        working-directory: voceador
+        run: npm run test:multisite
