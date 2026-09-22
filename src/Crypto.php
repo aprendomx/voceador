@@ -20,26 +20,63 @@ final class Crypto {
 	private const PREFIX = 'v1:';
 
 	/**
-	 * Clave simétrica de 32 bytes.
+	 * Clave explícita pasada al constructor, o null para derivarla perezosamente por sitio.
 	 *
-	 * @var string
+	 * @var string|null
 	 */
-	private string $key;
+	private ?string $explicit_key;
+
+	/**
+	 * Claves ya derivadas, memoizadas por id de blog (Multisite: la semilla o los
+	 * salts pueden variar por sitio, así que no se puede memoizar en una sola clave).
+	 *
+	 * @var array<int, string>
+	 */
+	private static array $derived_keys = array();
 
 	/**
 	 * Constructor.
+	 *
+	 * No deriva la clave aquí: si depende de la semilla o de los salts del sitio,
+	 * derivarla en el constructor la fijaría al blog activo en ese momento. key()
+	 * la resuelve de forma perezosa, en cada llamada a encrypt()/decrypt().
 	 *
 	 * @param string|null $key Clave de SODIUM_CRYPTO_SECRETBOX_KEYBYTES bytes; null deriva la del sitio.
 	 * @throws \InvalidArgumentException Si la clave no tiene la longitud correcta.
 	 */
 	public function __construct( ?string $key = null ) {
-		$key = $key ?? self::derive_key();
-
-		if ( SODIUM_CRYPTO_SECRETBOX_KEYBYTES !== strlen( $key ) ) {
+		if ( null !== $key && SODIUM_CRYPTO_SECRETBOX_KEYBYTES !== strlen( $key ) ) {
 			throw new \InvalidArgumentException( 'La clave de cifrado debe tener ' . esc_html( (string) SODIUM_CRYPTO_SECRETBOX_KEYBYTES ) . ' bytes.' );
 		}
 
-		$this->key = $key;
+		$this->explicit_key = $key;
+	}
+
+	/**
+	 * Clave efectiva: la explícita si se pasó una al constructor, o la derivada
+	 * del sitio actual, memoizada por blog para no recalcularla en cada llamada.
+	 *
+	 * @return string
+	 */
+	private function key(): string {
+		if ( null !== $this->explicit_key ) {
+			return $this->explicit_key;
+		}
+
+		$blog_id = get_current_blog_id();
+
+		if ( ! isset( self::$derived_keys[ $blog_id ] ) ) {
+			self::$derived_keys[ $blog_id ] = self::derive_key();
+		}
+
+		return self::$derived_keys[ $blog_id ];
+	}
+
+	/**
+	 * Vacía la memoización de claves derivadas. Solo para tests.
+	 */
+	public static function forget_derived_keys(): void {
+		self::$derived_keys = array();
 	}
 
 	/**
@@ -110,14 +147,24 @@ final class Crypto {
 
 	/**
 	 * Semilla propia del sitio, usada cuando no hay salts de autenticación
-	 * configurados. Se genera una sola vez y se persiste en wp_options;
-	 * add_option() no sobrescribe un valor existente, así que si dos
-	 * requests concurrentes la generan a la vez, ambas terminan leyendo y
-	 * usando la misma semilla ya guardada.
+	 * configurados. Se genera una sola vez y se persiste en wp_options.
+	 * add_option() no garantiza atomicidad: dos peticiones concurrentes
+	 * podrían comprobar a la vez que la opción no existe y generar semillas
+	 * distintas, y la segunda escritura pisaría a la primera. Por eso la
+	 * escritura se hace con INSERT IGNORE directamente sobre wp_options:
+	 * solo la primera fila se guarda y el resto de peticiones relee la
+	 * semilla ya persistida.
+	 *
+	 * Nota: en WP_UnitTestCase las tablas nuevas se crean como temporales,
+	 * pero wp_options es una tabla real dentro de la transacción de cada
+	 * test, así que este INSERT funciona igual en tests.
 	 *
 	 * @return string
+	 * @throws \RuntimeException Si la semilla no se pudo persistir ni releer.
 	 */
 	public static function seed_material(): string {
+		global $wpdb;
+
 		$option = VOCEADOR_PREFIX . 'crypto_seed';
 		$seed   = get_option( $option );
 
@@ -125,10 +172,25 @@ final class Crypto {
 			return $seed;
 		}
 
-		$seed = base64_encode( random_bytes( 32 ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Codificación binaria, no ofuscación.
-		add_option( $option, $seed, '', false );
+		$candidate = base64_encode( random_bytes( 32 ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Codificación binaria, no ofuscación.
 
-		return (string) get_option( $option );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared -- add_option() no es atómica; INSERT IGNORE evita que dos peticiones concurrentes se sobrescriban la semilla.
+		$wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'no')", $option, $candidate ) );
+
+		wp_cache_delete( $option, 'options' );
+		wp_cache_delete( 'alloptions', 'options' );
+		// La comprobación de arriba (get_option() sin resultado) marcó $option en la
+		// caché 'notoptions': sin borrarla también, get_option() volvería a devolver
+		// false sin tocar la base de datos, ignorando el INSERT que acaba de ocurrir.
+		wp_cache_delete( 'notoptions', 'options' );
+
+		$seed = get_option( $option );
+
+		if ( ! is_string( $seed ) || '' === $seed ) {
+			throw new \RuntimeException( 'Voceador no pudo persistir la semilla de cifrado.' );
+		}
+
+		return $seed;
 	}
 
 	/**
@@ -139,7 +201,7 @@ final class Crypto {
 	 */
 	public function encrypt( string $plain ): string {
 		$nonce  = random_bytes( SODIUM_CRYPTO_SECRETBOX_NONCEBYTES );
-		$cipher = sodium_crypto_secretbox( $plain, $nonce, $this->key );
+		$cipher = sodium_crypto_secretbox( $plain, $nonce, $this->key() );
 
 		return self::PREFIX . base64_encode( $nonce . $cipher ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Codificación binaria, no ofuscación.
 	}
@@ -164,7 +226,7 @@ final class Crypto {
 
 		$nonce  = substr( $raw, 0, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES );
 		$cipher = substr( $raw, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES );
-		$plain  = sodium_crypto_secretbox_open( $cipher, $nonce, $this->key );
+		$plain  = sodium_crypto_secretbox_open( $cipher, $nonce, $this->key() );
 
 		if ( false === $plain ) {
 			return new \WP_Error( 'voceador_crypto_key', __( 'No se pudo descifrar: la clave de cifrado del sitio cambió. Vuelve a conectar el canal.', 'voceador' ) );

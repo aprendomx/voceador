@@ -71,6 +71,7 @@ class CryptoTest extends WP_UnitTestCase {
 	}
 
 	public function tear_down(): void {
+		remove_filter( 'query', array( $this, 'block_seed_insert' ) );
 		delete_option( VOCEADOR_PREFIX . 'crypto_seed' );
 
 		parent::tear_down();
@@ -84,5 +85,36 @@ class CryptoTest extends WP_UnitTestCase {
 	public function test_empty_string_roundtrips(): void {
 		$crypto = new Crypto( $this->key( 'a' ) );
 		$this->assertSame( '', $crypto->decrypt( $crypto->encrypt( '' ) ) );
+	}
+
+	public function test_seed_material_throws_when_it_cannot_persist(): void {
+		delete_option( VOCEADOR_PREFIX . 'crypto_seed' );
+		add_filter( 'query', array( $this, 'block_seed_insert' ) );
+
+		$this->expectException( RuntimeException::class );
+		Crypto::seed_material();
+	}
+
+	/**
+	 * Convierte el INSERT IGNORE de seed_material() en un SELECT inofensivo,
+	 * para simular que la persistencia de la semilla falla.
+	 *
+	 * @param string $query Consulta SQL.
+	 * @return string
+	 */
+	public function block_seed_insert( string $query ): string {
+		if ( false !== strpos( $query, 'INSERT IGNORE INTO' ) && false !== strpos( $query, 'crypto_seed' ) ) {
+			return 'SELECT 1';
+		}
+
+		return $query;
+	}
+
+	public function test_seed_material_is_stable_across_cache_flush(): void {
+		$first = Crypto::seed_material();
+		wp_cache_flush();
+		$second = Crypto::seed_material();
+
+		$this->assertSame( $first, $second );
 	}
 }
