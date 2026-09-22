@@ -148,8 +148,16 @@ final class Plugin {
 			return new Settings();
 		};
 
-		$this->factories[ Channels\ChannelRegistry::class ] = static function (): Channels\ChannelRegistry {
-			return new Channels\ChannelRegistry();
+		$this->factories[ Channels\ChannelRegistry::class ] = static function ( Plugin $c ): Channels\ChannelRegistry {
+			return new Channels\ChannelRegistry(
+				array(
+					Channels\FacebookPageAdapter::type() => static fn() => $c->get( Channels\FacebookPageAdapter::class ),
+				)
+			);
+		};
+
+		$this->factories[ Channels\FacebookPageAdapter::class ] = static function ( Plugin $c ): Channels\FacebookPageAdapter {
+			return new Channels\FacebookPageAdapter( $c->get( GraphClient::class ), $c->get( Settings::class ) );
 		};
 
 		$this->factories[ ChannelRepository::class ] = static function ( Plugin $c ): ChannelRepository {
