@@ -103,6 +103,10 @@ class QueueTest extends WP_UnitTestCase {
 		$wpdb->update( ( new Schema( $wpdb ) )->table( 'jobs' ), array( 'updated_at' => '2020-01-01 00:00:00' ), array( 'id' => $stale ) );
 		$fresh = $this->jobs->create_if_absent( 50, 4 );
 		$this->jobs->claim( $fresh );
+		$stale_comment = $this->jobs->create_if_absent( 50, 5 );
+		$this->jobs->mark_published( $stale_comment, 'r', '', true );
+		$this->jobs->claim_comment( $stale_comment );
+		$wpdb->update( ( new Schema( $wpdb ) )->table( 'jobs' ), array( 'updated_at' => '2020-01-01 00:00:00' ), array( 'id' => $stale_comment ) );
 
 		delete_option( VOCEADOR_PREFIX . Queue::OPTION_LAST_RUN );
 
@@ -110,9 +114,10 @@ class QueueTest extends WP_UnitTestCase {
 
 		$this->assertSame(
 			array(
-				'pending'      => 1,
-				'rate_limited' => 1,
-				'stale'        => 1,
+				'pending'        => 1,
+				'rate_limited'   => 1,
+				'stale'          => 1,
+				'stale_comments' => 1,
 			),
 			$counts
 		);
@@ -120,6 +125,8 @@ class QueueTest extends WP_UnitTestCase {
 		$this->assertNotFalse( wp_next_scheduled( Queue::HOOK_RUN, array( $limited ) ) );
 		$this->assertSame( 'unverified', $this->jobs->find( $stale )->error_code );
 		$this->assertSame( 'running', $this->jobs->find( $fresh )->status );
+		$this->assertSame( 'failed', $this->jobs->find( $stale_comment )->comment_status );
+		$this->assertSame( 'published', $this->jobs->find( $stale_comment )->status, 'El comentario atascado no toca el estado principal.' );
 		$this->assertEqualsWithDelta( time(), (int) get_option( VOCEADOR_PREFIX . Queue::OPTION_LAST_RUN ), 5 );
 	}
 }

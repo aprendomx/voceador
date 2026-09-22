@@ -94,10 +94,12 @@ class PublisherTest extends WP_UnitTestCase {
 			)
 		);
 		$published         = array();
+		$published_jobs    = array();
 		add_action(
 			'voceador_published',
-			static function ( $job, $channel, $result ) use ( &$published ) {
-				$published[] = $result->id;
+			static function ( $job, $channel, $result ) use ( &$published, &$published_jobs ) {
+				$published[]      = $result->id;
+				$published_jobs[] = $job;
 			},
 			10,
 			3
@@ -111,6 +113,7 @@ class PublisherTest extends WP_UnitTestCase {
 		$this->assertSame( 'pending', $job->comment_status );
 		$this->assertSame( 1, $job->attempts );
 		$this->assertSame( array( '1001_7' ), $published );
+		$this->assertSame( '1001_7', $published_jobs[0]->remote_id, 'El listener ve el trabajo ya con remote_id guardado.' );
 		$this->assertStringEndsWith( '/1001/photos', $this->requests[0]['url'] );
 		$this->assertStringContainsString( "Nota\n\nExtracto", $this->requests[0]['args']['body'], 'Caption por defecto.' );
 		$this->assertEqualsWithDelta( time() + 60, wp_next_scheduled( Queue::HOOK_COMMENT, array( $id ) ), 5 );
@@ -180,6 +183,27 @@ class PublisherTest extends WP_UnitTestCase {
 		$this->assertSame( 'published', $this->jobs->find( $id )->status, 'El fallo del comentario no toca el estado principal.' );
 	}
 
+	public function test_run_comment_is_locked_and_claimed(): void {
+		$this->responses[] = GraphResponses::ok(
+			array(
+				'id'      => '7',
+				'post_id' => '1001_7',
+			)
+		);
+		$id                = $this->job();
+		$this->publisher->run( $id );
+		$this->requests = array();
+
+		set_transient( VOCEADOR_PREFIX . 'lock_comment_' . $id, time(), 60 );
+		$this->assertSame( 'locked', $this->publisher->run_comment( $id ) );
+		$this->assertCount( 0, $this->requests, 'No llama a Graph con el lock tomado.' );
+
+		delete_transient( VOCEADOR_PREFIX . 'lock_comment_' . $id );
+		$this->assertTrue( $this->jobs->claim_comment( $id ) );
+		$this->assertSame( 'locked', $this->publisher->run_comment( $id ), 'El comentario ya está en running.' );
+		$this->assertCount( 0, $this->requests, 'No llama a Graph con el comentario ya reclamado.' );
+	}
+
 	public function test_transient_error_releases_with_backoff_until_retries_exhausted(): void {
 		$this->settings->update(
 			array(
@@ -227,11 +251,27 @@ class PublisherTest extends WP_UnitTestCase {
 	}
 
 	public function test_paused_channel_fails_without_calling_graph(): void {
+		$failed = array();
+		add_action(
+			'voceador_failed',
+			static function ( $job, $channel, $error ) use ( &$failed ) {
+				$failed[] = $error->get_error_code();
+			},
+			10,
+			3
+		);
+
 		$this->channels->set_status( $this->channel_id, 'paused' );
 		$id = $this->job();
 		$this->assertSame( 'failed', $this->publisher->run( $id ) );
 		$this->assertSame( 'channel_unavailable', $this->jobs->find( $id )->error_code );
 		$this->assertCount( 0, $this->requests );
+		$this->assertSame( array( 'channel_unavailable' ), $failed );
+
+		global $wpdb;
+		$logger = new Logger( $wpdb, new Schema( $wpdb ), 'debug' );
+		$rows   = $logger->recent( array( 'job_id' => $id ) );
+		$this->assertCount( 1, array_filter( $rows, static fn( array $row ) => 'publish_failed' === $row['event'] ) );
 	}
 
 	public function test_rate_limited_error_reschedules_with_retry_after(): void {

@@ -120,6 +120,19 @@ final class JobRepository {
 	}
 
 	/**
+	 * Reclama el comentario de un trabajo publicado para enviarlo. Solo un proceso puede ganar.
+	 *
+	 * @param int $id Id del trabajo.
+	 * @return bool true si este proceso lo reclamó.
+	 */
+	public function claim_comment( int $id ): bool {
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- El nombre de tabla viene de Schema::table(), no de entrada de usuario.
+		$this->wpdb->query( $this->wpdb->prepare( "UPDATE {$this->table()} SET comment_status = 'running', updated_at = %s WHERE id = %d AND status = 'published' AND comment_status IN ('pending', 'failed')", current_time( 'mysql', true ), $id ) );
+
+		return 1 === $this->wpdb->rows_affected;
+	}
+
+	/**
 	 * Marca el trabajo como publicado.
 	 *
 	 * @param int    $id              Id.
@@ -290,6 +303,22 @@ final class JobRepository {
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- El nombre de tabla viene de Schema::table(), no de entrada de usuario.
 		$rows = $this->wpdb->get_results( $this->wpdb->prepare( "SELECT * FROM {$this->table()} WHERE status = 'running' AND updated_at < %s ORDER BY updated_at ASC, id ASC LIMIT %d", $cutoff, $limit ), ARRAY_A );
+
+		return array_map( static fn( array $row ) => new Job( $row ), $rows ? $rows : array() );
+	}
+
+	/**
+	 * Comentarios que llevan demasiado tiempo en running (el proceso murió a mitad).
+	 *
+	 * @param int $older_than_seconds Antigüedad mínima de updated_at.
+	 * @param int $limit              Máximo.
+	 * @return Job[]
+	 */
+	public function stale_comment_running( int $older_than_seconds = 900, int $limit = 50 ): array {
+		$cutoff = gmdate( 'Y-m-d H:i:s', time() - $older_than_seconds );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- El nombre de tabla viene de Schema::table(), no de entrada de usuario.
+		$rows = $this->wpdb->get_results( $this->wpdb->prepare( "SELECT * FROM {$this->table()} WHERE comment_status = 'running' AND updated_at < %s ORDER BY updated_at ASC, id ASC LIMIT %d", $cutoff, $limit ), ARRAY_A );
 
 		return array_map( static fn( array $row ) => new Job( $row ), $rows ? $rows : array() );
 	}

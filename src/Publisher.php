@@ -88,66 +88,21 @@ final class Publisher implements Registrable {
 	 * Publica el comentario de un trabajo ya publicado.
 	 *
 	 * @param int $job_id Id.
-	 * @return string done, failed, pending (reprogramado) o skipped.
+	 * @return string done, failed, pending (reprogramado), skipped o locked.
 	 */
 	public function run_comment( int $job_id ): string {
-		$job = $this->jobs->find( $job_id );
-		if ( null === $job || ! $job->is_published() || ! in_array( $job->comment_status, array( 'pending', 'failed' ), true ) ) {
-			return 'skipped';
+		$lock = VOCEADOR_PREFIX . 'lock_comment_' . $job_id;
+
+		if ( false !== get_transient( $lock ) ) {
+			return 'locked';
 		}
+		set_transient( $lock, time(), self::LOCK_TTL );
 
-		$channel = $this->channels->find( $job->channel_id );
-		$post    = get_post( $job->post_id );
-		if ( null === $channel || ! $channel->is_active() || ! $post instanceof \WP_Post ) {
-			return 'skipped';
+		try {
+			return $this->execute_comment( $job_id );
+		} finally {
+			delete_transient( $lock );
 		}
-
-		$retries = (int) $this->settings->get( 'execution.retries', $channel->settings );
-		if ( $job->comment_attempts >= $retries ) {
-			return 'failed';
-		}
-
-		$text = $this->templates->comment( $channel, $post );
-		if ( '' === $text ) {
-			$this->jobs->mark_comment_done( $job->id, '' );
-			return 'skipped';
-		}
-
-		$result = $this->registry->adapter( $channel->type )->comment( $channel, (string) $job->remote_id, $text );
-
-		if ( ! is_wp_error( $result ) ) {
-			$this->jobs->mark_comment_done( $job->id, $result->id );
-			$this->logger->info(
-				'comment_published',
-				'Comentario publicado',
-				array(
-					'job_id'            => $job->id,
-					'post_id'           => $job->post_id,
-					'channel_id'        => $channel->id,
-					'remote_comment_id' => $result->id,
-				)
-			);
-			return 'done';
-		}
-
-		$this->jobs->mark_comment_failed( $job->id, $result->get_error_message() );
-		$this->logger->warning(
-			'comment_failed',
-			$result->get_error_message(),
-			array(
-				'job_id'     => $job->id,
-				'post_id'    => $job->post_id,
-				'channel_id' => $channel->id,
-				'class'      => $result->get_error_code(),
-			)
-		);
-
-		if ( 'transient' === $result->get_error_code() && $job->comment_attempts + 1 < $retries ) {
-			$this->queue->schedule_comment( $job->id, $this->backoff( $job->comment_attempts + 1 ) );
-			return 'pending';
-		}
-
-		return 'failed';
 	}
 
 	/**
@@ -255,14 +210,16 @@ final class Publisher implements Registrable {
 
 		$this->logger->log( in_array( $class, array( 'auth', 'permission', 'fatal' ), true ) ? 'error' : 'warning', 'publish_failed', $message, $context );
 
+		$fresh = $this->jobs->find( $job->id ) ?? $job;
+
 		/**
 		 * Se dispara cuando un trabajo falla (aunque vaya a reintentarse).
 		 *
-		 * @param Job       $job     Trabajo.
+		 * @param Job       $job     Trabajo, ya con status/attempts/error_code guardados.
 		 * @param Channel   $channel Canal.
 		 * @param \WP_Error $error   Error normalizado.
 		 */
-		do_action( 'voceador_failed', $job, $channel, $error );
+		do_action( 'voceador_failed', $fresh, $channel, $error );
 
 		return $status;
 	}
@@ -302,7 +259,7 @@ final class Publisher implements Registrable {
 		if ( null === $job ) {
 			return 'missing';
 		}
-		if ( $job->is_published() ) {
+		if ( $job->is_published() || null !== $job->remote_id ) {
 			return 'published';
 		}
 		if ( 'unverified' === $job->error_code && ! $force ) {
@@ -311,9 +268,32 @@ final class Publisher implements Registrable {
 
 		$channel = $this->channels->find( $job->channel_id );
 		if ( null === $channel || ! $channel->is_active() ) {
-			$this->jobs->mark_failed( $job->id, 'channel_unavailable', __( 'El canal no existe o está pausado.', 'voceador' ) );
+			$error = new \WP_Error( 'channel_unavailable', __( 'El canal no existe o está pausado.', 'voceador' ), array( 'class' => 'channel_unavailable' ) );
+			$this->jobs->mark_failed( $job->id, 'channel_unavailable', $error->get_error_message() );
+			$this->logger->warning(
+				'publish_failed',
+				$error->get_error_message(),
+				array(
+					'job_id'     => $job->id,
+					'post_id'    => $job->post_id,
+					'channel_id' => $job->channel_id,
+					'class'      => 'channel_unavailable',
+				)
+			);
+
+			$fresh = $this->jobs->find( $job->id ) ?? $job;
+
+			/**
+			 * Se dispara cuando un trabajo falla (aunque vaya a reintentarse).
+			 *
+			 * @param Job       $job     Trabajo.
+			 * @param Channel   $channel Canal (con solo el id si no existe).
+			 * @param \WP_Error $error   Error normalizado.
+			 */
+			do_action( 'voceador_failed', $fresh, $channel ?? new Channel( array( 'id' => $job->channel_id ) ), $error );
+
 			return 'failed';
-		}
+		}//end if
 
 		$post = get_post( $job->post_id );
 		if ( ! $post instanceof \WP_Post || 'publish' !== $post->post_status ) {
@@ -369,19 +349,91 @@ final class Publisher implements Registrable {
 			)
 		);
 
+		$fresh = $this->jobs->find( $job->id ) ?? $job;
+
 		/**
 		 * Se dispara cuando un trabajo se publica.
 		 *
-		 * @param Job                              $job     Trabajo (estado previo a la publicación).
+		 * @param Job                              $job     Trabajo, ya con remote_id/status/attempts guardados.
 		 * @param Channel                          $channel Canal.
 		 * @param \Voceador\Channels\RemoteResult $result  Resultado remoto.
 		 */
-		do_action( 'voceador_published', $job, $channel, $result );
+		do_action( 'voceador_published', $fresh, $channel, $result );
 
 		if ( '' !== $comment ) {
 			$this->queue->schedule_comment( $job->id, (int) $this->settings->get( 'execution.comment_delay', $channel->settings ) );
 		}
 
 		return 'published';
+	}
+
+	/**
+	 * Cuerpo de run_comment() una vez tomado el lock.
+	 *
+	 * @param int $job_id Id.
+	 * @return string
+	 */
+	private function execute_comment( int $job_id ): string {
+		$job = $this->jobs->find( $job_id );
+		if ( null === $job || ! $job->is_published() || ! in_array( $job->comment_status, array( 'pending', 'failed', 'running' ), true ) ) {
+			return 'skipped';
+		}
+
+		$channel = $this->channels->find( $job->channel_id );
+		$post    = get_post( $job->post_id );
+		if ( null === $channel || ! $channel->is_active() || ! $post instanceof \WP_Post ) {
+			return 'skipped';
+		}
+
+		$retries = (int) $this->settings->get( 'execution.retries', $channel->settings );
+		if ( $job->comment_attempts >= $retries ) {
+			return 'failed';
+		}
+
+		if ( ! $this->jobs->claim_comment( $job->id ) ) {
+			return 'locked';
+		}
+
+		$text = $this->templates->comment( $channel, $post );
+		if ( '' === $text ) {
+			$this->jobs->mark_comment_done( $job->id, '' );
+			return 'skipped';
+		}
+
+		$result = $this->registry->adapter( $channel->type )->comment( $channel, (string) $job->remote_id, $text );
+
+		if ( ! is_wp_error( $result ) ) {
+			$this->jobs->mark_comment_done( $job->id, $result->id );
+			$this->logger->info(
+				'comment_published',
+				'Comentario publicado',
+				array(
+					'job_id'            => $job->id,
+					'post_id'           => $job->post_id,
+					'channel_id'        => $channel->id,
+					'remote_comment_id' => $result->id,
+				)
+			);
+			return 'done';
+		}
+
+		$this->jobs->mark_comment_failed( $job->id, $result->get_error_message() );
+		$this->logger->warning(
+			'comment_failed',
+			$result->get_error_message(),
+			array(
+				'job_id'     => $job->id,
+				'post_id'    => $job->post_id,
+				'channel_id' => $channel->id,
+				'class'      => $result->get_error_code(),
+			)
+		);
+
+		if ( 'transient' === $result->get_error_code() && $job->comment_attempts + 1 < $retries ) {
+			$this->queue->schedule_comment( $job->id, $this->backoff( $job->comment_attempts + 1 ) );
+			return 'pending';
+		}
+
+		return 'failed';
 	}
 }

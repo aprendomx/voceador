@@ -166,17 +166,18 @@ final class Queue implements Registrable {
 	}
 
 	/**
-	 * Reprograma trabajos vencidos y marca como no verificados los atascados.
+	 * Reprograma trabajos vencidos y marca como no verificados/fallidos los atascados.
 	 *
-	 * @return array{pending:int,rate_limited:int,stale:int}
+	 * @return array{pending:int,rate_limited:int,stale:int,stale_comments:int}
 	 */
 	public function sweep(): array {
 		$this->touch();
 
 		$counts = array(
-			'pending'      => 0,
-			'rate_limited' => 0,
-			'stale'        => 0,
+			'pending'        => 0,
+			'rate_limited'   => 0,
+			'stale'          => 0,
+			'stale_comments' => 0,
 		);
 
 		foreach ( $this->jobs->due() as $job ) {
@@ -201,6 +202,20 @@ final class Queue implements Registrable {
 				)
 			);
 			++$counts['stale'];
+		}
+
+		foreach ( $this->jobs->stale_comment_running( self::STALE_AFTER ) as $job ) {
+			$this->jobs->mark_comment_failed( $job->id, __( 'El proceso se interrumpió durante el comentario.', 'voceador' ) );
+			$this->logger->warning(
+				'comment_stale',
+				'Comentario atascado en running marcado como fallido',
+				array(
+					'job_id'     => $job->id,
+					'post_id'    => $job->post_id,
+					'channel_id' => $job->channel_id,
+				)
+			);
+			++$counts['stale_comments'];
 		}
 
 		if ( array_sum( $counts ) > 0 ) {
