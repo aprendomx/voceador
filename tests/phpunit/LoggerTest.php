@@ -1,0 +1,137 @@
+<?php
+/**
+ * @package Voceador
+ */
+
+use Voceador\Logger;
+use Voceador\Schema;
+
+class LoggerTest extends WP_UnitTestCase {
+
+	private Logger $logger;
+
+	public function set_up(): void {
+		parent::set_up();
+		global $wpdb;
+		$this->logger = new Logger( $wpdb, new Schema( $wpdb ), 'debug' );
+	}
+
+	public function test_redact_masks_sensitive_keys_recursively(): void {
+		$redacted = Logger::redact(
+			array(
+				'access_token'  => 'EAAabc',
+				'app_secret'    => 's',
+				'Authorization' => 'Bearer x',
+				'code'          => 'oauth-code',
+				'nested'        => array(
+					'page_token' => 't',
+					'safe'       => 'ok',
+					'password'   => 'p',
+				),
+				'graph_code'    => 190,
+				'safe'          => 'visible',
+			)
+		);
+
+		$this->assertSame( '[redactado]', $redacted['access_token'] );
+		$this->assertSame( '[redactado]', $redacted['app_secret'] );
+		$this->assertSame( '[redactado]', $redacted['Authorization'] );
+		$this->assertSame( '[redactado]', $redacted['code'] );
+		$this->assertSame( '[redactado]', $redacted['nested']['page_token'] );
+		$this->assertSame( '[redactado]', $redacted['nested']['password'] );
+		$this->assertSame( 'ok', $redacted['nested']['safe'] );
+		$this->assertSame( 190, $redacted['graph_code'], 'graph_code no es un secreto.' );
+		$this->assertSame( 'visible', $redacted['safe'] );
+	}
+
+	public function test_redact_masks_tokens_inside_strings(): void {
+		$token    = 'EAA' . str_repeat( 'Ab1', 10 );
+		$redacted = Logger::redact(
+			array(
+				'url'  => 'https://graph.facebook.com/v26.0/me?fields=id&access_token=' . $token . '&x=1',
+				'body' => 'client_secret=abc123&grant_type=x',
+				'msg'  => 'Token ' . $token . ' rechazado',
+			)
+		);
+
+		$this->assertSame( 'https://graph.facebook.com/v26.0/me?fields=id&access_token=[redactado]&x=1', $redacted['url'] );
+		$this->assertSame( 'client_secret=[redactado]&grant_type=x', $redacted['body'] );
+		$this->assertSame( 'Token [redactado] rechazado', $redacted['msg'] );
+	}
+
+	public function test_log_writes_row_with_ids_and_redacted_context(): void {
+		global $wpdb;
+		$this->logger->error(
+			'publish_failed',
+			'Falló',
+			array(
+				'channel_id'   => 3,
+				'post_id'      => 7,
+				'job_id'       => 9,
+				'access_token' => 'EAAsecreto',
+				'graph_code'   => 190,
+			)
+		);
+
+		$row = $wpdb->get_row( 'SELECT * FROM ' . ( new Schema( $wpdb ) )->table( 'log' ) . ' ORDER BY id DESC LIMIT 1', ARRAY_A );
+
+		$this->assertSame( 'error', $row['level'] );
+		$this->assertSame( 'publish_failed', $row['event'] );
+		$this->assertSame( 'Falló', $row['message'] );
+		$this->assertSame( '3', $row['channel_id'] );
+		$this->assertSame( '7', $row['post_id'] );
+		$this->assertSame( '9', $row['job_id'] );
+		$this->assertStringNotContainsString( 'EAAsecreto', $row['context'] );
+		$this->assertStringNotContainsString( 'channel_id', $row['context'], 'Los ids van en columnas, no en el JSON.' );
+		$this->assertSame( 190, json_decode( $row['context'], true )['graph_code'] );
+	}
+
+	public function test_min_level_filters_out_lower_levels(): void {
+		global $wpdb;
+		$logger = new Logger( $wpdb, new Schema( $wpdb ), 'warning' );
+		$before = (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . ( new Schema( $wpdb ) )->table( 'log' ) );
+
+		$logger->debug( 'a', 'x' );
+		$logger->info( 'b', 'x' );
+		$logger->warning( 'c', 'x' );
+		$logger->error( 'd', 'x' );
+
+		$after = (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . ( new Schema( $wpdb ) )->table( 'log' ) );
+		$this->assertSame( 2, $after - $before );
+	}
+
+	public function test_unknown_level_is_treated_as_error(): void {
+		$this->logger->log( 'critical', 'e', 'x' );
+		$rows = $this->logger->recent( array( 'limit' => 1 ) );
+		$this->assertSame( 'error', $rows[0]['level'] );
+	}
+
+	public function test_recent_filters_and_decodes_context(): void {
+		$this->logger->info(
+			'one',
+			'x',
+			array(
+				'post_id' => 1,
+				'k'       => 'v',
+			)
+		);
+		$this->logger->warning( 'two', 'x', array( 'post_id' => 2 ) );
+		$this->logger->warning( 'three', 'x', array( 'post_id' => 1 ) );
+
+		$rows = $this->logger->recent( array( 'post_id' => 1 ) );
+		$this->assertCount( 2, $rows );
+		$this->assertSame( 'three', $rows[0]['event'], 'Más reciente primero.' );
+		$this->assertSame( array( 'k' => 'v' ), $rows[1]['context'] );
+
+		$this->assertCount( 2, $this->logger->recent( array( 'level' => 'warning' ) ) );
+		$this->assertCount(
+			1,
+			$this->logger->recent(
+				array(
+					'level'   => 'warning',
+					'post_id' => 2,
+				)
+			)
+		);
+	}
+}

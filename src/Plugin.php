@@ -161,6 +161,11 @@ final class Plugin {
 			global $wpdb;
 			return new JobRepository( $wpdb, $c->get( Schema::class ) );
 		};
+
+		$this->factories[ Logger::class ] = static function ( Plugin $c ): Logger {
+			global $wpdb;
+			return new Logger( $wpdb, $c->get( Schema::class ), (string) $c->get( Settings::class )->get( 'log.level' ) );
+		};
 	}
 
 	/**
