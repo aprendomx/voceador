@@ -77,8 +77,11 @@ class PluginTest extends WP_UnitTestCase {
 			\Voceador\JobRepository::class,
 			\Voceador\Logger::class,
 			\Voceador\GraphClient::class,
+			\Voceador\Channels\FacebookPageAdapter::class,
 		) as $id ) {
 			$this->assertInstanceOf( $id, $plugin->get( $id ) );
 		}
+
+		$this->assertTrue( $plugin->get( \Voceador\Channels\ChannelRegistry::class )->has( 'facebook_page' ) );
 	}
 }

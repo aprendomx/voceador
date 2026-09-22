@@ -30,6 +30,7 @@ tests_add_filter(
 	static function () use ( $voceador_root ): void {
 		require $voceador_root . '/voceador.php';
 		require $voceador_root . '/tests/phpunit/Fixtures/FakeAdapter.php';
+		require $voceador_root . '/tests/phpunit/Fixtures/GraphResponses.php';
 	}
 );
 
