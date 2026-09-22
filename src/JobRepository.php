@@ -19,8 +19,11 @@ final class JobRepository {
 
 	/**
 	 * Estados desde los que se puede reclamar un trabajo.
+	 *
+	 * 'skipped' no lo programa nada automáticamente (due() solo lee 'pending'); solo lo
+	 * reclama una ejecución explícita, por ejemplo tras añadir la imagen que faltaba.
 	 */
-	private const CLAIMABLE = array( 'pending', 'failed', 'rate_limited' );
+	private const CLAIMABLE = array( 'pending', 'failed', 'rate_limited', 'skipped' );
 
 	/**
 	 * Constructor.
@@ -250,6 +253,9 @@ final class JobRepository {
 	/**
 	 * Registra un fallo al comentar sin tocar el estado principal.
 	 *
+	 * El mensaje se guarda con el prefijo "Comentario: " porque error_message comparte
+	 * columna con el error de la publicación principal, para poder distinguirlos.
+	 *
 	 * Devuelve false solo si la consulta falló, igual que set(): no se basa en
 	 * rows_affected porque repetir el mismo error no cambia ninguna columna y
 	 * no debe interpretarse como que el trabajo no existe.
@@ -260,9 +266,23 @@ final class JobRepository {
 	 */
 	public function mark_comment_failed( int $id, string $error_message ): bool {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- El nombre de tabla viene de Schema::table(), no de entrada de usuario.
-		$result = $this->wpdb->query( $this->wpdb->prepare( "UPDATE {$this->table()} SET comment_status = 'failed', comment_attempts = comment_attempts + 1, error_message = %s, updated_at = %s WHERE id = %d", Logger::redact_string( $error_message ), current_time( 'mysql', true ), $id ) );
+		$result = $this->wpdb->query( $this->wpdb->prepare( "UPDATE {$this->table()} SET comment_status = 'failed', comment_attempts = comment_attempts + 1, error_message = %s, updated_at = %s WHERE id = %d", Logger::redact_string( 'Comentario: ' . $error_message ), current_time( 'mysql', true ), $id ) );
 
 		return false !== $result;
+	}
+
+	/**
+	 * Fija el estado del comentario sin tocar attempts ni error.
+	 *
+	 * Para el guard de intentos agotados de Publisher::execute_comment(): a diferencia de
+	 * mark_comment_failed(), no incrementa comment_attempts (ya está en el tope).
+	 *
+	 * @param int    $id     Id.
+	 * @param string $status Uno de los estados de comment_status.
+	 * @return bool true salvo error de consulta.
+	 */
+	public function set_comment_status( int $id, string $status ): bool {
+		return $this->set( $id, array( 'comment_status' => $status ) );
 	}
 
 	/**
