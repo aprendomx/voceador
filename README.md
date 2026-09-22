@@ -42,6 +42,14 @@ Para probar la desinstalación usa siempre `wp plugin uninstall voceador --skip-
 
 Los tokens de los canales se cifran con una clave derivada de `AUTH_KEY`/`SECURE_AUTH_KEY` (o de la constante `VOCEADOR_ENCRYPTION_KEY`, si se define; es la opción recomendada). Rotar esas salts invalida todos los canales conectados, que habrá que reconectar.
 
+## Documentos legales
+
+Meta exige que la app que conecta el plugin tenga URL públicas de política de privacidad, condiciones de servicio e instrucciones de eliminación de datos. Los textos están en `docs/legal/` y pueden publicarse tal cual (por ejemplo en GitHub Pages o en una página del sitio):
+
+- [Política de privacidad](docs/legal/politica-de-privacidad.md)
+- [Condiciones de servicio](docs/legal/condiciones-de-servicio.md)
+- [Eliminación de datos](docs/legal/eliminacion-de-datos.md)
+
 ## Licencia
 
 GPL-2.0-or-later. Ver [LICENSE](LICENSE).
