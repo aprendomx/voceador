@@ -55,7 +55,7 @@ final class JobRepository {
 			$args = array( $post_id, $channel_id, $source, $scheduled_at, $now, $now );
 		}
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared -- El nombre de tabla viene de Schema::table(), no de entrada de usuario.
 		$this->wpdb->query( $this->wpdb->prepare( $sql, ...$args ) );
 
 		return 1 === $this->wpdb->rows_affected ? (int) $this->wpdb->insert_id : null;
@@ -123,7 +123,7 @@ final class JobRepository {
 	 * @param string $remote_id       Id remoto de la publicación.
 	 * @param string $remote_url      URL pública.
 	 * @param bool   $comment_pending Si queda pendiente el comentario.
-	 * @return bool
+	 * @return bool true salvo error de consulta.
 	 */
 	public function mark_published( int $id, string $remote_id, string $remote_url, bool $comment_pending ): bool {
 		return $this->set(
@@ -146,7 +146,7 @@ final class JobRepository {
 	 * @param int    $id            Id.
 	 * @param string $error_code    Clase de error normalizada (más código Graph si se quiere).
 	 * @param string $error_message Mensaje para la redacción.
-	 * @return bool
+	 * @return bool true salvo error de consulta.
 	 */
 	public function mark_failed( int $id, string $error_code, string $error_message ): bool {
 		return $this->set(
@@ -165,7 +165,7 @@ final class JobRepository {
 	 * @param int    $id            Id.
 	 * @param string $scheduled_at  Cuándo reintentar (UTC, MySQL).
 	 * @param string $error_message Explicación.
-	 * @return bool
+	 * @return bool true salvo error de consulta.
 	 */
 	public function mark_rate_limited( int $id, string $scheduled_at, string $error_message ): bool {
 		return $this->set(
@@ -184,7 +184,7 @@ final class JobRepository {
 	 *
 	 * @param int    $id           Id.
 	 * @param string $scheduled_at Cuándo (UTC, MySQL).
-	 * @return bool
+	 * @return bool true salvo error de consulta.
 	 */
 	public function release( int $id, string $scheduled_at ): bool {
 		return $this->set(
@@ -201,7 +201,7 @@ final class JobRepository {
 	 *
 	 * @param int    $id     Id.
 	 * @param string $reason Motivo.
-	 * @return bool
+	 * @return bool true salvo error de consulta.
 	 */
 	public function mark_skipped( int $id, string $reason ): bool {
 		return $this->set(
@@ -219,7 +219,7 @@ final class JobRepository {
 	 *
 	 * @param int    $id                Id.
 	 * @param string $remote_comment_id Id remoto del comentario.
-	 * @return bool
+	 * @return bool true salvo error de consulta.
 	 */
 	public function mark_comment_done( int $id, string $remote_comment_id ): bool {
 		return $this->set(
@@ -266,7 +266,7 @@ final class JobRepository {
 	public function count_by_status(): array {
 		$counts = array_fill_keys( self::STATUSES, 0 );
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- El nombre de tabla viene de Schema::table(), no de entrada de usuario.
 		$rows = $this->wpdb->get_results( "SELECT status, COUNT(*) AS n FROM {$this->table()} GROUP BY status", ARRAY_A );
 
 		foreach ( $rows ? $rows : array() as $row ) {
@@ -288,6 +288,9 @@ final class JobRepository {
 	/**
 	 * Actualiza columnas de un trabajo.
 	 *
+	 * Devuelve false solo si la consulta falló; una repetición idempotente devuelve true.
+	 * Quien necesite saber si el trabajo existe debe usar find().
+	 *
 	 * @param int   $id   Id.
 	 * @param array $data Columnas => valores (null permitido).
 	 * @return bool
@@ -295,9 +298,9 @@ final class JobRepository {
 	private function set( int $id, array $data ): bool {
 		$data['updated_at'] = current_time( 'mysql', true );
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- El nombre de tabla viene de Schema::table(), no de entrada de usuario.
 		$updated = $this->wpdb->update( $this->table(), $data, array( 'id' => $id ) );
 
-		return false !== $updated && $updated > 0;
+		return false !== $updated;
 	}
 }

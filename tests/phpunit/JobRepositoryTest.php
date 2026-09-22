@@ -146,4 +146,18 @@ class JobRepositoryTest extends WP_UnitTestCase {
 		$this->assertSame( 1, $counts['failed'] );
 		$this->assertSame( 0, $counts['published'] );
 	}
+
+	public function test_transitions_are_idempotent(): void {
+		$id = $this->repo->create_if_absent( 20, 1 );
+
+		$this->assertTrue( $this->repo->mark_failed( $id, 'auth', 'Token expirado' ) );
+		$this->assertTrue( $this->repo->mark_failed( $id, 'auth', 'Token expirado' ) );
+
+		$this->assertTrue( $this->repo->mark_comment_done( $id, 'c1' ) );
+		$this->assertTrue( $this->repo->mark_comment_done( $id, 'c1' ) );
+
+		$job = $this->repo->find( $id );
+		$this->assertSame( 'failed', $job->status );
+		$this->assertSame( 'c1', $job->remote_comment_id );
+	}
 }
