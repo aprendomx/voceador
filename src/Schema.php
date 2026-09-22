@@ -15,7 +15,7 @@ final class Schema {
 	/**
 	 * Versión del esquema. Súbela cada vez que cambie el SQL de install().
 	 */
-	public const DB_VERSION = '1';
+	public const DB_VERSION = '2';
 
 	/**
 	 * Nombres cortos de las tablas del plugin.
@@ -91,17 +91,51 @@ final class Schema {
 	}
 
 	/**
-	 * Migra datos entre versiones del esquema.
+	 * Migraciones con datos entre versiones de esquema.
 	 *
-	 * @param string $from Versión de origen.
-	 * @param string $to   Versión de destino.
+	 * El método dbDelta añade columnas e índices pero nunca los borra: lo que
+	 * haya que eliminar o transformar se hace aquí, comparando versiones.
+	 *
+	 * @param string $from Versión instalada ('0' si es una instalación nueva).
+	 * @param string $to   Versión destino.
 	 */
-	public function migrate( string $from, string $to ): void { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- $from se usará cuando exista la primera migración.
-		switch ( $to ) {
-			default:
-				// Las migraciones con datos se añaden aquí por versión; hoy no hay ninguna.
-				break;
+	public function migrate( string $from, string $to ): void {
+		if ( version_compare( $from, '2', '<' ) && version_compare( $to, '2', '>=' ) ) {
+			// v2: KEY type era redundante con UNIQUE type_remote.
+			$this->drop_index( 'channels', 'type' );
 		}
+	}
+
+	/**
+	 * Indica si una tabla tiene un índice.
+	 *
+	 * @param string $table Nombre corto de la tabla.
+	 * @param string $index Nombre del índice.
+	 * @return bool
+	 */
+	public function has_index( string $table, string $index ): bool {
+		$name = $this->table( $table );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- El nombre de tabla viene de una lista cerrada.
+		$found = $this->wpdb->get_var( $this->wpdb->prepare( "SHOW INDEX FROM {$name} WHERE Key_name = %s", $index ) );
+
+		return null !== $found;
+	}
+
+	/**
+	 * Borra un índice si existe.
+	 *
+	 * @param string $table Nombre corto de la tabla.
+	 * @param string $index Nombre del índice.
+	 */
+	private function drop_index( string $table, string $index ): void {
+		if ( ! $this->has_index( $table, $index ) ) {
+			return;
+		}
+
+		$name = $this->table( $table );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Tabla e índice vienen de listas cerradas del plugin.
+		$this->wpdb->query( "ALTER TABLE {$name} DROP INDEX {$index}" );
 	}
 
 	/**
@@ -136,7 +170,6 @@ final class Schema {
 			updated_at datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
 			PRIMARY KEY  (id),
 			UNIQUE KEY type_remote (type,remote_id),
-			KEY type (type),
 			KEY status (status)
 			) {$collate};",
 
@@ -163,7 +196,8 @@ final class Schema {
 			UNIQUE KEY post_channel (post_id,channel_id),
 			KEY status (status),
 			KEY channel_status (channel_id,status),
-			KEY scheduled_at (scheduled_at)
+			KEY scheduled_at (scheduled_at),
+			KEY status_scheduled (status,scheduled_at)
 			) {$collate};",
 
 			'log'      => "CREATE TABLE {$log} (
