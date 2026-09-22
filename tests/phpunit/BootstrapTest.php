@@ -16,4 +16,12 @@ class BootstrapTest extends WP_UnitTestCase {
 		$this->assertFalse( class_exists( 'Voceador\\NoExiste' ) );
 		$this->assertFalse( class_exists( 'OtroNamespace\\Clase' ) );
 	}
+
+	public function test_autoloader_resolves_plugin_classes(): void {
+		$this->assertTrue( class_exists( 'Voceador\\Schema' ) );
+		$this->assertSame(
+			VOCEADOR_DIR . '/src/Schema.php',
+			( new ReflectionClass( \Voceador\Schema::class ) )->getFileName()
+		);
+	}
 }
