@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<ruleset name="Voceador">
+	<description>Reglas de código de Voceador.</description>
+
+	<file>.</file>
+	<exclude-pattern>/vendor/*</exclude-pattern>
+	<exclude-pattern>/node_modules/*</exclude-pattern>
+	<exclude-pattern>/docs/*</exclude-pattern>
+
+	<arg name="extensions" value="php" />
+	<arg name="basepath" value="." />
+	<arg value="sp" />
+
+	<config name="minimum_wp_version" value="6.4" />
+	<config name="testVersion" value="8.1-" />
+
+	<rule ref="WordPress">
+		<!-- Las clases siguen PSR-4: src/Foo/Bar.php, no class-bar.php. -->
+		<exclude name="WordPress.Files.FileName" />
+	</rule>
+	<rule ref="PHPCompatibilityWP" />
+
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array">
+				<element value="voceador" />
+			</property>
+		</properties>
+	</rule>
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<properties>
+			<property name="prefixes" type="array">
+				<element value="voceador" />
+				<element value="Voceador" />
+			</property>
+		</properties>
+		<exclude-pattern>/tests/*</exclude-pattern>
+	</rule>
+
+	<!-- Los tests no necesitan docblocks por método ni consultas preparadas. -->
+	<rule ref="Squiz.Commenting">
+		<exclude-pattern>/tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Generic.Commenting">
+		<exclude-pattern>/tests/*</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.DB">
+		<exclude-pattern>/tests/*</exclude-pattern>
+	</rule>
+</ruleset>

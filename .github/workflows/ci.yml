@@ -1,0 +1,64 @@
+name: CI
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: voceador
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: voceador/package-lock.json
+
+      - name: Instalar dependencias de Node
+        working-directory: voceador
+        run: npm ci
+
+      - name: Arrancar wp-env
+        working-directory: voceador
+        run: npm run env:start
+
+      - name: Instalar dependencias de desarrollo de PHP
+        working-directory: voceador
+        run: npm run composer -- install --no-interaction
+
+      - name: Lint
+        working-directory: voceador
+        run: npm run lint
+
+      - name: Tests (single site)
+        working-directory: voceador
+        run: npm run test
+
+      - name: Tests (Multisite)
+        working-directory: voceador
+        run: npm run test:multisite
+
+      - name: "Smoke: activar y desinstalar"
+        working-directory: voceador
+        run: |
+          npx wp-env run cli wp plugin activate voceador
+          npx wp-env run cli wp eval 'do_action("init");'
+          test "$(npx wp-env run cli wp db query "SHOW TABLES LIKE '%voceador%'" --skip-column-names | grep -c voceador)" -eq 3
+          test "$(npx wp-env run cli wp option get voceador_db_version)" = "1"
+          npx wp-env run cli wp cap list administrator | grep -q '^voceador_manage$'
+          npx wp-env run cli wp plugin deactivate voceador
+          npx wp-env run cli wp plugin uninstall voceador --skip-delete
+          test -z "$(npx wp-env run cli wp db query "SHOW TABLES LIKE '%voceador%'" --skip-column-names)"
+          ! npx wp-env run cli wp option get voceador_db_version

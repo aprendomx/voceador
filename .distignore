@@ -17,3 +17,6 @@ vendor
 docs
 tests
 README.md
+.phpunit.result.cache
+.superpowers
+.DS_Store
