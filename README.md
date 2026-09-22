@@ -11,7 +11,7 @@
 
 ## Requisitos
 
-PHP 8.1+, WordPress 6.4+ (single site o Multisite), extensión libsodium.
+PHP 8.1+, WordPress 6.4+ (single site o Multisite).
 
 ## Estructura del repositorio
 
@@ -19,19 +19,22 @@ La raíz del repositorio es la carpeta del plugin. `readme.txt` sigue el formato
 
 ## Desarrollo
 
-Requisitos: Docker y Node 20+. No hace falta PHP ni Composer en el host; Composer se ejecuta dentro del contenedor y solo instala herramientas de desarrollo.
+Requisitos: Docker y Node 22+. No hace falta PHP ni Composer en el host; Composer se ejecuta dentro del contenedor y solo instala herramientas de desarrollo.
 
 El directorio del repositorio debe llamarse `voceador`.
 
 ```bash
 npm install
 npm run env:start              # WordPress en http://localhost:8888 (admin / password)
+npm run env:stop               # detiene el entorno
 npm run composer -- install    # PHPUnit y PHPCS dentro del contenedor
 npm run test                   # tests en single site
 npm run test:multisite         # tests en Multisite
 npm run lint                   # WordPress Coding Standards
 npm run lint:fix               # corrige el formato automáticamente
 ```
+
+`npm run test` excluye el grupo `ms-required`; esos tests solo corren con `npm run test:multisite`.
 
 Para probar la desinstalación usa siempre `wp plugin uninstall voceador --skip-delete`: la carpeta del plugin en wp-env es este repositorio y sin ese flag WP-CLI borraría los archivos.
 
