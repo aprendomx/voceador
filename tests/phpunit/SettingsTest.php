@@ -75,4 +75,21 @@ class SettingsTest extends WP_UnitTestCase {
 
 		$this->assertSame( 'v25.0', $this->settings->get( 'graph_version' ) );
 	}
+
+	public function test_update_replaces_lists_wholesale(): void {
+		$this->settings->update( array( 'rules' => array( 'post_types' => array( 'post', 'page' ) ) ) );
+		$this->settings->update( array( 'rules' => array( 'post_types' => array( 'post' ) ) ) );
+
+		$this->assertSame( array( 'post' ), $this->settings->get( 'rules.post_types' ) );
+	}
+
+	public function test_all_replaces_lists_wholesale(): void {
+		$this->settings->update( array( 'rules' => array( 'post_types' => array( 'page' ) ) ) );
+		$all = $this->settings->all();
+
+		$this->assertSame( array( 'page' ), $all['rules']['post_types'], 'El default array( "post" ) no debe filtrarse en el índice 0.' );
+
+		$this->settings->update( array( 'rules' => array( 'post_types' => array() ) ) );
+		$this->assertSame( array(), $this->settings->get( 'rules.post_types' ) );
+	}
 }

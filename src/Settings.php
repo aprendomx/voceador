@@ -96,7 +96,13 @@ final class Settings {
 	public function all(): array {
 		$layers = array_reverse( $this->layers( array() ) );
 
-		return array_replace_recursive( ...$layers );
+		return array_reduce(
+			$layers,
+			static function ( array $carry, array $layer ): array {
+				return self::merge( $carry, $layer );
+			},
+			array()
+		);
 	}
 
 	/**
@@ -106,7 +112,7 @@ final class Settings {
 	 */
 	public function update( array $values ): void {
 		$current = $this->site();
-		$merged  = array_replace_recursive( $current, $values );
+		$merged  = self::merge( $current, $values );
 
 		if ( false === get_option( VOCEADOR_PREFIX . self::OPTION ) ) {
 			add_option( VOCEADOR_PREFIX . self::OPTION, $merged, '', false );
@@ -143,6 +149,35 @@ final class Settings {
 		$stored = get_option( VOCEADOR_PREFIX . self::OPTION, array() );
 
 		return is_array( $stored ) ? $stored : array();
+	}
+
+	/**
+	 * Fusiona dos árboles de ajustes de forma recursiva.
+	 *
+	 * Las listas (arrays secuenciales, `array_is_list()` verdadero) se tratan como
+	 * un valor atómico: si tanto la base como el override son listas, o si el
+	 * override es una lista y la base no lo es (o viceversa), el override
+	 * reemplaza a la base por completo en vez de fusionarse índice a índice.
+	 * Solo los arrays asociativos (mapas clave → valor) se fusionan clave a clave.
+	 * Las claves que solo existen en la base se conservan.
+	 *
+	 * @param array $base     Árbol base.
+	 * @param array $override Árbol que sobrescribe al base.
+	 * @return array
+	 */
+	private static function merge( array $base, array $override ): array {
+		foreach ( $override as $key => $value ) {
+			$base_value = $base[ $key ] ?? null;
+
+			if ( is_array( $value ) && is_array( $base_value ) && ! array_is_list( $value ) && ! array_is_list( $base_value ) ) {
+				$base[ $key ] = self::merge( $base_value, $value );
+				continue;
+			}
+
+			$base[ $key ] = $value;
+		}
+
+		return $base;
 	}
 
 	/**
