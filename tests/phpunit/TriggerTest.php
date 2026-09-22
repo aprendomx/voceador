@@ -106,14 +106,14 @@ class TriggerTest extends WP_UnitTestCase {
 	}
 
 	public function test_enqueue_is_idempotent(): void {
-		// Crear el post directamente con post_status => 'publish' dispara
-		// transition_post_status() de verdad (old_status "new" -> "publish"). El plugin
-		// ya está activo en el entorno de tests (voceador.php lo arranca en
-		// "plugins_loaded"), así que su propio Trigger -distinto de $this->trigger-
-		// también está enganchado a ese hook y encolaría el trabajo antes de la primera
-		// llamada explícita de abajo, rompiendo la aserción "1". Se crea como borrador
-		// (no dispara ninguna transición a publish) y se marca "publish" solo en memoria
-		// para aislar la prueba de ese efecto secundario real de WordPress.
+		// No se puede crear el post directamente con post_status => 'publish': eso
+		// dispara transition_post_status() de verdad, y $this->trigger ya está enganchado
+		// a ese hook desde set_up() (register_hooks()), así que el propio trigger local
+		// encolaría el trabajo antes de la primera llamada explícita de abajo, rompiendo
+		// la aserción "1". Esto es independiente del Trigger global (desenganchado en
+		// tests/bootstrap.php): ocurre aunque solo el trigger local esté enganchado. Se
+		// crea como borrador (no dispara ninguna transición a publish) y se marca
+		// "publish" solo en memoria para aislar la prueba de ese efecto colateral real.
 		$post_id           = self::factory()->post->create( array( 'post_status' => 'draft' ) );
 		$post              = get_post( $post_id );
 		$post->post_status = 'publish';
