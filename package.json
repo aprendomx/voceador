@@ -10,7 +10,8 @@
     "test": "wp-env run tests-cli --env-cwd=wp-content/plugins/voceador vendor/bin/phpunit",
     "test:multisite": "wp-env run tests-cli --env-cwd=wp-content/plugins/voceador vendor/bin/phpunit -c tests/phpunit/multisite.xml",
     "lint": "wp-env run tests-cli --env-cwd=wp-content/plugins/voceador vendor/bin/phpcs",
-    "lint:fix": "wp-env run tests-cli --env-cwd=wp-content/plugins/voceador vendor/bin/phpcbf"
+    "lint:fix": "wp-env run tests-cli --env-cwd=wp-content/plugins/voceador vendor/bin/phpcbf",
+    "build:zip": "bash bin/build-zip.sh"
   },
   "devDependencies": {
     "@wordpress/env": "^10.0.0"

@@ -209,6 +209,10 @@ final class Plugin {
 		$this->factories[ Trigger::class ] = static function ( Plugin $c ): Trigger {
 			return new Trigger( $c->get( Rules::class ), $c->get( JobRepository::class ), $c->get( Queue::class ), $c->get( Settings::class ), $c->get( Logger::class ) );
 		};
+
+		$this->factories[ CLI::class ] = static function ( Plugin $c ): CLI {
+			return new CLI( $c->get( ChannelRepository::class ), $c->get( Channels\ChannelRegistry::class ), $c->get( Publisher::class ), $c->get( JobRepository::class ), $c->get( Queue::class ), $c->get( Logger::class ) );
+		};
 	}
 
 	/**
@@ -220,6 +224,10 @@ final class Plugin {
 			if ( $service instanceof Registrable ) {
 				$service->register_hooks();
 			}
+		}
+
+		if ( defined( 'WP_CLI' ) && WP_CLI ) {
+			$this->get( CLI::class )->register();
 		}
 	}
 }

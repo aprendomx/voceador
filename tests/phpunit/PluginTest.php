@@ -66,7 +66,11 @@ class PluginTest extends WP_UnitTestCase {
 		$this->assertCount( 1, $installer_hooks );
 	}
 
-	public function test_every_phase_1a_service_resolves(): void {
+	public function test_every_service_resolves(): void {
+		// reset()+boot() dentro del propio test: has_action() compara identidad de objeto,
+		// y el hook base registrado en el arranque global pertenece a una instancia de
+		// Plugin distinta (ver Plugin::reset()).
+		Plugin::reset();
 		$plugin = Plugin::boot();
 
 		foreach ( array(
@@ -78,10 +82,18 @@ class PluginTest extends WP_UnitTestCase {
 			\Voceador\Logger::class,
 			\Voceador\GraphClient::class,
 			\Voceador\Channels\FacebookPageAdapter::class,
+			\Voceador\Templates::class,
+			\Voceador\Queue::class,
+			\Voceador\Publisher::class,
+			\Voceador\Rules::class,
+			\Voceador\Trigger::class,
+			\Voceador\CLI::class,
 		) as $id ) {
 			$this->assertInstanceOf( $id, $plugin->get( $id ) );
 		}
 
 		$this->assertTrue( $plugin->get( \Voceador\Channels\ChannelRegistry::class )->has( 'facebook_page' ) );
+		$this->assertNotFalse( has_action( \Voceador\Queue::HOOK_RUN, array( $plugin->get( \Voceador\Publisher::class ), 'run' ) ) );
+		$this->assertNotFalse( has_action( 'transition_post_status', array( $plugin->get( \Voceador\Trigger::class ), 'on_transition' ) ) );
 	}
 }
