@@ -189,12 +189,22 @@ class SchemaTest extends WP_UnitTestCase {
 	public function test_migrate_from_1_drops_type_index(): void {
 		global $wpdb;
 		$table = $this->schema->table( 'channels' );
+		// El ALTER TABLE es DDL y hace un commit implícito en MySQL/MariaDB: escapa al
+		// rollback transaccional de WP_UnitTestCase. Si una aserción de abajo fallara
+		// antes de llamar a migrate(), el índice añadido aquí quedaría en la tabla para
+		// el resto de la suite; el finally se asegura de que migrate() se ejecute pase
+		// lo que pase (es idempotente, así que repetirlo no hace daño).
 		$wpdb->query( "ALTER TABLE {$table} ADD KEY type (type)" );
-		$this->assertTrue( $this->schema->has_index( 'channels', 'type' ) );
 
-		$this->schema->migrate( '1', '2' );
+		try {
+			$this->assertTrue( $this->schema->has_index( 'channels', 'type' ) );
 
-		$this->assertFalse( $this->schema->has_index( 'channels', 'type' ) );
+			$this->schema->migrate( '1', '2' );
+
+			$this->assertFalse( $this->schema->has_index( 'channels', 'type' ) );
+		} finally {
+			$this->schema->migrate( '1', '2' );
+		}
 	}
 
 	public function test_migrate_is_a_noop_when_already_current(): void {
