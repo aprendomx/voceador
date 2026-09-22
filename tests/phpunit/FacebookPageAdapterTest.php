@@ -131,6 +131,32 @@ class FacebookPageAdapterTest extends WP_UnitTestCase {
 		$this->assertSame( 'media', $media->get_error_code() );
 	}
 
+	public function test_prepare_media_falls_back_to_medium_size_that_fits(): void {
+		// 33772.jpg es 1920x1080: lo bastante grande para generar large, medium_large y
+		// medium (canola.jpg, 640x480, no llega a generar large ni medium_large).
+		$post          = $this->post_with_image( '33772.jpg' );
+		$attachment_id = (int) get_post_thumbnail_id( $post );
+
+		$medium = image_get_intermediate_size( $attachment_id, 'medium' );
+		$this->assertIsArray( $medium, 'La fixture debe generar el tamaño medium.' );
+		$medium_large = image_get_intermediate_size( $attachment_id, 'medium_large' );
+		$this->assertIsArray( $medium_large, 'La fixture debe generar el tamaño medium_large.' );
+
+		$dir          = trailingslashit( dirname( (string) get_attached_file( $attachment_id ) ) );
+		$medium_path  = $dir . wp_basename( $medium['file'] );
+		$medium_bytes = filesize( $medium_path );
+		$this->assertGreaterThan( 0, $medium_bytes );
+		$this->assertGreaterThan( $medium_bytes, filesize( $dir . wp_basename( $medium_large['file'] ) ), 'medium_large debe pesar más que medium para que el límite los distinga.' );
+
+		add_filter( 'voceador_fb_max_bytes', static fn() => $medium_bytes );
+
+		$media = $this->adapter->prepare_media( $this->channel(), $post );
+
+		$this->assertInstanceOf( Media::class, $media );
+		$this->assertSame( $medium_path, $media->path, 'Cae hasta el primer tamaño (large, medium_large, medium) que cabe en el límite.' );
+		$this->assertLessThanOrEqual( $medium_bytes, $media->bytes );
+	}
+
 	public function test_image_filter(): void {
 		add_filter( 'voceador_image', static fn( Media $m ) => new Media( '', 'https://cdn.example/x.jpg' ), 10, 1 ); // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Firma del filtro voceador_image.
 		$media = $this->adapter->prepare_media( $this->channel(), $this->post_with_image() );
