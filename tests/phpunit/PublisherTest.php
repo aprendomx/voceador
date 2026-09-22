@@ -46,6 +46,13 @@ class PublisherTest extends WP_UnitTestCase {
 
 		$this->publisher = new Publisher( $this->jobs, $this->channels, $registry, new Templates( $this->settings ), $this->settings, $logger, $queue );
 
+		// El plugin ya está activo en el entorno de tests (voceador.php lo arranca en
+		// "plugins_loaded"), así que su propio Trigger -distinto de los servicios creados
+		// arriba para este test- está enganchado a transition_post_status. Estas pruebas
+		// crean posts en estado "publish" directamente y no esperan que eso encole
+		// trabajos por su cuenta, así que se desengancha para todo el test.
+		remove_all_actions( 'transition_post_status', 20 );
+
 		$this->channel_id = $this->channels->insert(
 			array(
 				'type'        => 'facebook_page',
