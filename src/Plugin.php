@@ -156,6 +156,11 @@ final class Plugin {
 			global $wpdb;
 			return new ChannelRepository( $wpdb, $c->get( Schema::class ), $c->get( Crypto::class ) );
 		};
+
+		$this->factories[ JobRepository::class ] = static function ( Plugin $c ): JobRepository {
+			global $wpdb;
+			return new JobRepository( $wpdb, $c->get( Schema::class ) );
+		};
 	}
 
 	/**
