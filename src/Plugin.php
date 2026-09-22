@@ -151,6 +151,11 @@ final class Plugin {
 		$this->factories[ Channels\ChannelRegistry::class ] = static function (): Channels\ChannelRegistry {
 			return new Channels\ChannelRegistry();
 		};
+
+		$this->factories[ ChannelRepository::class ] = static function ( Plugin $c ): ChannelRepository {
+			global $wpdb;
+			return new ChannelRepository( $wpdb, $c->get( Schema::class ), $c->get( Crypto::class ) );
+		};
 	}
 
 	/**
