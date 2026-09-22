@@ -23,6 +23,7 @@ class LoggerTest extends WP_UnitTestCase {
 				'app_secret'    => 's',
 				'Authorization' => 'Bearer x',
 				'code'          => 'oauth-code',
+				'Code'          => 'x',
 				'nested'        => array(
 					'page_token' => 't',
 					'safe'       => 'ok',
@@ -37,6 +38,7 @@ class LoggerTest extends WP_UnitTestCase {
 		$this->assertSame( '[redactado]', $redacted['app_secret'] );
 		$this->assertSame( '[redactado]', $redacted['Authorization'] );
 		$this->assertSame( '[redactado]', $redacted['code'] );
+		$this->assertSame( '[redactado]', $redacted['Code'], 'La clave "code" se compara sin distinguir mayúsculas.' );
 		$this->assertSame( '[redactado]', $redacted['nested']['page_token'] );
 		$this->assertSame( '[redactado]', $redacted['nested']['password'] );
 		$this->assertSame( 'ok', $redacted['nested']['safe'] );

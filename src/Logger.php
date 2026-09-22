@@ -94,7 +94,7 @@ final class Logger {
 
 		$row['context'] = (string) wp_json_encode( self::redact( $context ) );
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- El nombre de tabla viene de Schema::table(), no de entrada de usuario.
 		$this->wpdb->insert( $this->table(), $row );
 	}
 
@@ -157,7 +157,7 @@ final class Logger {
 		$clean = array();
 
 		foreach ( $context as $key => $value ) {
-			if ( is_string( $key ) && ( 'code' === $key || preg_match( self::SENSITIVE_KEY, $key ) ) ) {
+			if ( is_string( $key ) && ( 'code' === strtolower( $key ) || preg_match( self::SENSITIVE_KEY, $key ) ) ) {
 				$clean[ $key ] = '[redactado]';
 				continue;
 			}
