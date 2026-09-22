@@ -18,3 +18,12 @@
 defined( 'ABSPATH' ) || exit;
 
 require_once __DIR__ . '/bootstrap.php';
+
+register_activation_hook(
+	__FILE__,
+	static function ( $network_wide ): void {
+		\Voceador\Plugin::boot()->installer()->activate( (bool) $network_wide );
+	}
+);
+
+add_action( 'plugins_loaded', array( \Voceador\Plugin::class, 'boot' ) );
