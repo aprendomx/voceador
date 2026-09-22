@@ -147,6 +147,10 @@ final class Plugin {
 		$this->factories[ Settings::class ] = static function (): Settings {
 			return new Settings();
 		};
+
+		$this->factories[ Channels\ChannelRegistry::class ] = static function (): Channels\ChannelRegistry {
+			return new Channels\ChannelRegistry();
+		};
 	}
 
 	/**
