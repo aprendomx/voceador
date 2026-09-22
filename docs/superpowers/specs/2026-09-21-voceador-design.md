@@ -153,6 +153,7 @@ El estado por canal vive en `voceador_jobs`, no en post meta.
 
 - `voceador_manage` se añade a `administrator` al activar.
 - Cron diario: `voceador_check_tokens`, `voceador_refresh_ig_tokens` (renueva tokens con menos de 10 días de vida), `voceador_purge_log`.
+- Cron horario: `voceador_sweep` (reprograma trabajos vencidos y marca como `unverified` los atascados en `running`).
 - `uninstall.php`: borra opciones, transients, las tres tablas, la capacidad, los crons y las imágenes generadas; los metas `_voceador_*` solo si `settings.uninstall.delete_meta` está activo. En Multisite recorre todos los sitios.
 
 ### Cifrado
