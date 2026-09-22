@@ -59,4 +59,27 @@ class InstallerTest extends WP_UnitTestCase {
 
 		$this->assertSame( Schema::DB_VERSION, get_option( VOCEADOR_PREFIX . 'db_version' ) );
 	}
+
+	public function test_maybe_install_skips_when_lock_is_held(): void {
+		add_option( VOCEADOR_PREFIX . 'installing', time(), '', false );
+		delete_option( VOCEADOR_PREFIX . 'db_version' );
+
+		$this->installer->maybe_install();
+
+		$this->assertFalse( get_option( VOCEADOR_PREFIX . 'db_version' ) );
+
+		delete_option( VOCEADOR_PREFIX . 'installing' );
+		$this->installer->maybe_install();
+
+		$this->assertSame( Schema::DB_VERSION, get_option( VOCEADOR_PREFIX . 'db_version' ) );
+	}
+
+	public function test_stale_lock_is_ignored(): void {
+		add_option( VOCEADOR_PREFIX . 'installing', time() - 120, '', false );
+		delete_option( VOCEADOR_PREFIX . 'db_version' );
+
+		$this->installer->maybe_install();
+
+		$this->assertSame( Schema::DB_VERSION, get_option( VOCEADOR_PREFIX . 'db_version' ) );
+	}
 }

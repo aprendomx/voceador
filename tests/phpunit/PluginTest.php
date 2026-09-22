@@ -20,7 +20,7 @@ class PluginTest extends WP_UnitTestCase {
 
 	public function test_registers_lazy_install_on_init(): void {
 		$this->assertSame(
-			10,
+			0,
 			has_action( 'init', array( Plugin::boot()->installer(), 'maybe_install' ) )
 		);
 	}

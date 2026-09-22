@@ -147,5 +147,29 @@ class SchemaTest extends WP_UnitTestCase {
 	public function test_install_is_idempotent(): void {
 		$this->schema->install();
 		$this->assertCount( 18, $this->columns( 'jobs' ) );
+		$this->assertSame( array(), $this->schema->pending_changes() );
+	}
+
+	public function test_channels_omitted_json_columns_store_empty_string(): void {
+		global $wpdb;
+		$wpdb->insert(
+			$this->schema->table( 'channels' ),
+			array(
+				'type'      => 'facebook_page',
+				'alias'     => 'Principal',
+				'remote_id' => '1234567890',
+			)
+		);
+
+		$channel = $wpdb->get_row(
+			$wpdb->prepare(
+				'SELECT * FROM ' . $this->schema->table( 'channels' ) . ' WHERE remote_id = %s',
+				'1234567890'
+			)
+		);
+
+		$this->assertSame( '', $channel->scopes );
+		$this->assertSame( '', $channel->health );
+		$this->assertSame( '', $channel->settings );
 	}
 }

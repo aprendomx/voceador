@@ -55,17 +55,68 @@ final class Schema {
 
 	/**
 	 * Crea o actualiza las tablas.
+	 *
+	 * `channels.credentials`, `channels.scopes`, `channels.health`, `channels.settings`
+	 * y `log.message` son NOT NULL sin valor por defecto porque MySQL no permite DEFAULT
+	 * en columnas TEXT/LONGTEXT. Con el sql_mode relajado de WordPress, omitir estas
+	 * columnas en un INSERT guarda '' (cadena vacía), y `json_decode('')` devuelve null:
+	 * los repositorios deben escribirlas siempre con un literal JSON válido y, al leer,
+	 * normalizar '' a array().
 	 */
 	public function install(): void {
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
+		foreach ( $this->statements() as $sql ) {
+			dbDelta( $sql );
+		}
+	}
+
+	/**
+	 * Sentencias que dbDelta() aplicaría sin ejecutarlas.
+	 *
+	 * Sirve para comprobar que install() es idempotente: tras instalar, no debe
+	 * quedar ningún cambio pendiente.
+	 *
+	 * @return array Cambios pendientes por tabla, tal cual los devuelve dbDelta().
+	 */
+	public function pending_changes(): array {
+		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+
+		$changes = array();
+		foreach ( $this->statements() as $sql ) {
+			$changes = array_merge( $changes, dbDelta( $sql, false ) );
+		}
+
+		return $changes;
+	}
+
+	/**
+	 * Migra datos entre versiones del esquema.
+	 *
+	 * @param string $from Versión de origen.
+	 * @param string $to   Versión de destino.
+	 */
+	public function migrate( string $from, string $to ): void { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- $from se usará cuando exista la primera migración.
+		switch ( $to ) {
+			default:
+				// Las migraciones con datos se añaden aquí por versión; hoy no hay ninguna.
+				break;
+		}
+	}
+
+	/**
+	 * Sentencias SQL de creación de las tablas del plugin.
+	 *
+	 * @return array Sentencias CREATE TABLE indexadas por nombre corto de tabla.
+	 */
+	private function statements(): array {
 		$collate  = $this->wpdb->get_charset_collate();
 		$channels = $this->table( 'channels' );
 		$jobs     = $this->table( 'jobs' );
 		$log      = $this->table( 'log' );
 
-		dbDelta(
-			"CREATE TABLE {$channels} (
+		return array(
+			'channels' => "CREATE TABLE {$channels} (
 			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 			type varchar(40) NOT NULL DEFAULT '',
 			alias varchar(190) NOT NULL DEFAULT '',
@@ -87,11 +138,9 @@ final class Schema {
 			UNIQUE KEY type_remote (type,remote_id),
 			KEY type (type),
 			KEY status (status)
-			) {$collate};"
-		);
+			) {$collate};",
 
-		dbDelta(
-			"CREATE TABLE {$jobs} (
+			'jobs'     => "CREATE TABLE {$jobs} (
 			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 			post_id bigint(20) unsigned NOT NULL,
 			channel_id bigint(20) unsigned NOT NULL,
@@ -115,11 +164,9 @@ final class Schema {
 			KEY status (status),
 			KEY channel_status (channel_id,status),
 			KEY scheduled_at (scheduled_at)
-			) {$collate};"
-		);
+			) {$collate};",
 
-		dbDelta(
-			"CREATE TABLE {$log} (
+			'log'      => "CREATE TABLE {$log} (
 			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 			created_at datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
 			level varchar(10) NOT NULL DEFAULT 'info',
@@ -134,7 +181,7 @@ final class Schema {
 			KEY channel_created (channel_id,created_at),
 			KEY post_id (post_id),
 			KEY level (level)
-			) {$collate};"
+			) {$collate};",
 		);
 	}
 

@@ -79,7 +79,7 @@ final class Plugin {
 	 * Registra los hooks del núcleo.
 	 */
 	private function register_hooks(): void {
-		add_action( 'init', array( $this->installer, 'maybe_install' ) );
+		add_action( 'init', array( $this->installer, 'maybe_install' ), 0 );
 		add_action( 'wp_initialize_site', array( $this->installer, 'on_new_site' ), 20 );
 	}
 }

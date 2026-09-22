@@ -37,11 +37,28 @@ final class Installer {
 	 * Instala o actualiza el sitio actual si su versión de esquema no es la vigente.
 	 */
 	public function maybe_install(): void {
-		if ( Schema::DB_VERSION === get_option( VOCEADOR_PREFIX . 'db_version' ) ) {
+		wp_roles()->for_site( get_current_blog_id() );
+
+		$from = (string) get_option( VOCEADOR_PREFIX . 'db_version', '0' );
+
+		if ( Schema::DB_VERSION === $from ) {
+			return;
+		}
+
+		// Un lock huérfano (petición anterior que murió a mitad de la instalación)
+		// no debe bloquear para siempre: si tiene más de un minuto, se descarta.
+		$lock = get_option( VOCEADOR_PREFIX . 'installing' );
+		if ( false !== $lock && (int) $lock < time() - MINUTE_IN_SECONDS ) {
+			delete_option( VOCEADOR_PREFIX . 'installing' );
+		}
+
+		// add_option() falla si la opción ya existe: otra petición está instalando.
+		if ( false === add_option( VOCEADOR_PREFIX . 'installing', time(), '', false ) ) {
 			return;
 		}
 
 		$this->schema->install();
+		$this->schema->migrate( $from, Schema::DB_VERSION );
 
 		$role = get_role( 'administrator' );
 		if ( null !== $role ) {
@@ -49,6 +66,8 @@ final class Installer {
 		}
 
 		update_option( VOCEADOR_PREFIX . 'db_version', Schema::DB_VERSION, true );
+
+		delete_option( VOCEADOR_PREFIX . 'installing' );
 	}
 
 	/**
