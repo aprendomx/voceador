@@ -33,6 +33,8 @@ class UninstallerTest extends WP_UnitTestCase {
 	}
 
 	public function test_removes_tables(): void {
+		// El DDL (DROP TABLE) hace un commit implícito en MySQL/MariaDB y rompe el aislamiento
+		// transaccional de WP_UnitTestCase; nada debe escribirse antes de clean_site() aquí.
 		remove_filter( 'query', array( $this, '_create_temporary_tables' ) );
 		remove_filter( 'query', array( $this, '_drop_temporary_tables' ) );
 		$this->assertTrue( $this->table_exists( 'jobs' ) );
@@ -50,6 +52,11 @@ class UninstallerTest extends WP_UnitTestCase {
 		set_transient( VOCEADOR_PREFIX . 'lock_job_5', 1, 60 );
 
 		Uninstaller::clean_site();
+		// run() vacía la caché de objetos al terminar; clean_site() ya no lo hace (se
+		// mueve a run() para no repetirlo por sitio en Multisite), así que el borrado
+		// directo por SQL de los transients necesita el mismo flush aquí para que
+		// get_transient() no lea un valor de caché obsoleto.
+		wp_cache_flush();
 
 		foreach ( Uninstaller::OPTIONS as $option ) {
 			$this->assertFalse( get_option( VOCEADOR_PREFIX . $option ), "La opción {$option} sigue existiendo." );
