@@ -268,6 +268,10 @@ final class GraphClient {
 	/**
 	 * URL completa con versión.
 	 *
+	 * Los valores escalares se codifican tal cual; los que no lo son (Graph
+	 * acepta JSON en parámetros complejos como "fields") se serializan a JSON
+	 * antes de codificarlos.
+	 *
 	 * @param string $path  Ruta.
 	 * @param array  $query Parámetros.
 	 * @return string
@@ -276,7 +280,20 @@ final class GraphClient {
 		$version = (string) $this->settings->get( 'graph_version' );
 		$url     = rtrim( $this->base_url, '/' ) . '/' . $version . '/' . ltrim( $path, '/' );
 
-		return $query ? add_query_arg( array_map( 'rawurlencode', $query ), $url ) : $url;
+		if ( ! $query ) {
+			return $url;
+		}
+
+		$encoded = array_map(
+			static function ( $value ) {
+				$value = is_scalar( $value ) ? (string) $value : (string) wp_json_encode( $value );
+
+				return rawurlencode( $value );
+			},
+			$query
+		);
+
+		return add_query_arg( $encoded, $url );
 	}
 
 	/**
@@ -300,6 +317,14 @@ final class GraphClient {
 					return $class;
 				}
 			}
+		}
+
+		if ( 429 === $http_code ) {
+			return 'rate_limited';
+		}
+
+		if ( 408 === $http_code ) {
+			return 'transient';
 		}
 
 		if ( $http_code >= 500 ) {

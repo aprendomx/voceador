@@ -183,6 +183,7 @@ class GraphClientTest extends WP_UnitTestCase {
 			'unknown fatal'  => array( 400, 999999, 'fatal' ),
 			'500 with 1'     => array( 500, 1, 'transient' ),
 			'500 with 190'   => array( 500, 190, 'auth' ),
+			'429 with 4'     => array( 429, 4, 'transient' ),
 		);
 	}
 
@@ -202,6 +203,42 @@ class GraphClientTest extends WP_UnitTestCase {
 
 		$this->assertSame( 'transient', $result->get_error_code() );
 		$this->assertSame( 502, $result->get_error_data()['http'] );
+	}
+
+	public function test_http_429_without_graph_error_is_rate_limited(): void {
+		$this->response = array(
+			'response' => array(
+				'code'    => 429,
+				'message' => 'Too Many Requests',
+			),
+			'headers'  => array( 'retry-after' => '30' ),
+			'body'     => 'rate limited',
+			'cookies'  => array(),
+			'filename' => null,
+		);
+
+		$result = $this->client->get( 'me' );
+
+		$this->assertSame( 'rate_limited', $result->get_error_code() );
+		$this->assertSame( 30, $result->get_error_data()['retry_after'] );
+	}
+
+	public function test_http_408_is_transient(): void {
+		$this->response = array(
+			'response' => array(
+				'code'    => 408,
+				'message' => 'Request Timeout',
+			),
+			'headers'  => array(),
+			'body'     => 'timeout',
+			'cookies'  => array(),
+			'filename' => null,
+		);
+
+		$result = $this->client->get( 'me' );
+
+		$this->assertSame( 'transient', $result->get_error_code() );
+		$this->assertSame( 408, $result->get_error_data()['http'] );
 	}
 
 	public function test_transport_error_is_transient(): void {
