@@ -24,13 +24,30 @@ final class Templates {
 	/**
 	 * Renderiza una plantilla para un post.
 	 *
+	 * Solo calcula los marcadores presentes en la plantilla: cada closure de
+	 * {@see vars()} se invoca como mucho una vez por marcador usado en esta
+	 * llamada, y su resultado se cachea en $resolved mientras dura la llamada.
+	 *
 	 * @param string   $template Plantilla con marcadores {clave}.
 	 * @param \WP_Post $post     Post.
-	 * @param array    $extra    Marcadores adicionales clave => valor.
+	 * @param array    $extra    Marcadores adicionales clave => valor; tienen prioridad sobre los calculados.
 	 * @return string
 	 */
 	public function render( string $template, \WP_Post $post, array $extra = array() ): string {
-		$vars = array_merge( $this->vars( $post ), $extra );
+		preg_match_all( '/\{([a-z_]+)\}/', $template, $matches );
+		$keys = array_unique( $matches[1] );
+
+		$resolvers = $this->vars( $post );
+		$resolved  = array();
+
+		foreach ( $keys as $key ) {
+			if ( array_key_exists( $key, $extra ) || ! array_key_exists( $key, $resolvers ) ) {
+				continue;
+			}
+			$resolved[ $key ] = ( $resolvers[ $key ] )();
+		}
+
+		$vars = array_merge( $resolved, $extra );
 
 		$out = preg_replace_callback(
 			'/\{([a-z_]+)\}/',
@@ -121,28 +138,42 @@ final class Templates {
 	}
 
 	/**
-	 * Valores de los marcadores de un post.
+	 * Resolutores perezosos de los marcadores de un post.
+	 *
+	 * Cada valor es un closure sin argumentos que calcula el marcador solo
+	 * cuando se invoca; {@see render()} solo invoca los que aparecen en la
+	 * plantilla.
 	 *
 	 * @param \WP_Post $post Post.
-	 * @return array<string, string>
+	 * @return array<string, callable(): string>
 	 */
 	private function vars( \WP_Post $post ): array {
-		$categories = array_map(
-			static fn( \WP_Term $t ) => $t->name,
-			array_filter( (array) get_the_category( $post->ID ), static fn( $t ) => $t instanceof \WP_Term )
-		);
-
 		return array(
-			'title'          => self::clean( get_the_title( $post ) ),
-			'excerpt'        => self::clean( $this->excerpt( $post ) ),
-			'permalink'      => (string) get_permalink( $post ),
-			'shortlink'      => (string) wp_get_shortlink( $post->ID ),
-			'site_name'      => self::clean( get_bloginfo( 'name' ) ),
-			'author'         => self::clean( (string) get_the_author_meta( 'display_name', (int) $post->post_author ) ),
-			'category'       => self::clean( (string) ( $categories[0] ?? '' ) ),
-			'categories'     => self::clean( implode( ', ', $categories ) ),
-			'date'           => get_the_date( 'd/m/Y', $post ),
-			'social_message' => self::clean( $this->social_message( $post ) ),
+			'title'          => fn(): string => self::clean( get_the_title( $post ) ),
+			'excerpt'        => fn(): string => self::clean( $this->excerpt( $post ) ),
+			'permalink'      => fn(): string => (string) get_permalink( $post ),
+			'shortlink'      => fn(): string => (string) wp_get_shortlink( $post->ID ),
+			'site_name'      => fn(): string => self::clean( get_bloginfo( 'name' ) ),
+			'author'         => fn(): string => self::clean( (string) get_the_author_meta( 'display_name', (int) $post->post_author ) ),
+			'category'       => fn(): string => self::clean( (string) ( $this->categories( $post )[0] ?? '' ) ),
+			'categories'     => fn(): string => self::clean( implode( ', ', $this->categories( $post ) ) ),
+			'date'           => fn(): string => get_the_date( 'd/m/Y', $post ),
+			'social_message' => fn(): string => $this->social_message( $post ),
+		);
+	}
+
+	/**
+	 * Nombres de las categorías de un post.
+	 *
+	 * @param \WP_Post $post Post.
+	 * @return string[]
+	 */
+	private function categories( \WP_Post $post ): array {
+		return array_values(
+			array_map(
+				static fn( \WP_Term $t ) => $t->name,
+				array_filter( (array) get_the_category( $post->ID ), static fn( $t ) => $t instanceof \WP_Term )
+			)
 		);
 	}
 
@@ -161,7 +192,7 @@ final class Templates {
 	}
 
 	/**
-	 * Primer valor no vacío de la cadena de fallback del texto social.
+	 * Primer valor no vacío (ya limpio) de la cadena de fallback del texto social.
 	 *
 	 * @param \WP_Post $post Post.
 	 * @return string
@@ -177,8 +208,9 @@ final class Templates {
 				default   => '',
 			};
 
-			if ( '' !== trim( self::clean( $value ) ) ) {
-				return $value;
+			$clean = self::clean( $value );
+			if ( '' !== trim( $clean ) ) {
+				return $clean;
 			}
 		}
 
@@ -188,10 +220,18 @@ final class Templates {
 	/**
 	 * Limpia HTML, shortcodes y entidades.
 	 *
+	 * Decodifica las entidades ANTES de quitar shortcodes y etiquetas: un
+	 * valor puede traer markup codificado como entidades (p. ej.
+	 * `&lt;b&gt;x&lt;/b&gt;`), y si se decodificara después de
+	 * `wp_strip_all_tags()` ese markup sobreviviría como texto literal en vez
+	 * de limpiarse. La segunda decodificación al final cubre valores que
+	 * venían doblemente codificados (p. ej. `&amp;amp;` → `&amp;` → `&`).
+	 *
 	 * @param string $text Texto.
 	 * @return string
 	 */
 	private static function clean( string $text ): string {
+		$text = html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
 		// strip_shortcodes() solo quita los registrados; el regex cubre los que no lo estén.
 		$text = (string) preg_replace( '/\[\/?[a-zA-Z0-9_-]+[^\]]*\]/', '', strip_shortcodes( $text ) );
 		$text = wp_strip_all_tags( $text, true );
