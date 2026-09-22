@@ -116,4 +116,33 @@ class TemplatesTest extends WP_UnitTestCase {
 		$this->assertSame( 'uno dos…', Templates::truncate( 'uno dos tres cuatro', 9 ) );
 		$this->assertSame( 'abcdefgh…', Templates::truncate( 'abcdefghijkl', 9 ), 'Sin espacios recorta duro.' );
 	}
+
+	public function test_clean_strips_entity_encoded_markup(): void {
+		$post_id = self::factory()->post->create( array( 'post_title' => 'Hola &lt;b&gt;negrita&lt;/b&gt; &amp;amp; fin' ) );
+		$post    = get_post( $post_id );
+
+		$this->assertSame( 'Hola negrita & fin', $this->templates->render( '{title}', $post ) );
+	}
+
+	public function test_render_only_resolves_used_placeholders(): void {
+		$post  = get_post( $this->post_id );
+		$calls = 0;
+
+		add_filter(
+			'get_shortlink',
+			static function () use ( &$calls ) {
+				++$calls;
+				return 'SHORT';
+			},
+			10,
+			4
+		);
+
+		$this->templates->render( '{title}', $post );
+		$this->assertSame( 0, $calls, 'render() no debe calcular marcadores que no aparecen en la plantilla.' );
+
+		$out = $this->templates->render( '{shortlink}', $post );
+		$this->assertSame( 1, $calls );
+		$this->assertSame( 'SHORT', $out );
+	}
 }
