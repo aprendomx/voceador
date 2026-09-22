@@ -61,6 +61,21 @@ class CryptoTest extends WP_UnitTestCase {
 		$this->assertSame( SODIUM_CRYPTO_SECRETBOX_KEYBYTES, strlen( Crypto::derive_key() ) );
 	}
 
+	public function test_seed_fallback_is_persisted_and_stable(): void {
+		$first  = Crypto::seed_material();
+		$second = Crypto::seed_material();
+
+		$this->assertNotSame( '', $first );
+		$this->assertSame( $first, $second );
+		$this->assertSame( $first, get_option( VOCEADOR_PREFIX . 'crypto_seed' ) );
+	}
+
+	public function tear_down(): void {
+		delete_option( VOCEADOR_PREFIX . 'crypto_seed' );
+
+		parent::tear_down();
+	}
+
 	public function test_default_constructor_uses_derived_key(): void {
 		$stored = ( new Crypto() )->encrypt( 'hola' );
 		$this->assertSame( 'hola', ( new Crypto( Crypto::derive_key() ) )->decrypt( $stored ) );
