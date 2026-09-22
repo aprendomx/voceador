@@ -154,4 +154,99 @@ class CLITest extends WP_UnitTestCase {
 		$this->responses[] = GraphResponses::ok( array( 'id' => '1001_5' ) );
 		$this->assertSame( array( $id => 'published' ), $this->cli->publish( $post_id, null, 'cli', true ) );
 	}
+
+	public function test_read_token_from_file_and_falls_back_to_token(): void {
+		$file = wp_tempnam( 'voceador-token' );
+		file_put_contents( $file, "EAAfromfile\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions
+
+		$this->assertSame( 'EAAfromfile', $this->cli->read_token( array( 'token-file' => $file ) ) );
+		unlink( $file ); // phpcs:ignore WordPress.WP.AlternativeFunctions
+
+		$this->assertSame( 'EAAdirect', $this->cli->read_token( array( 'token' => 'EAAdirect' ) ) );
+	}
+
+	public function test_read_token_errors_without_token_or_unreadable_file(): void {
+		$missing = $this->cli->read_token( array() );
+		$this->assertInstanceOf( WP_Error::class, $missing );
+		$this->assertSame( 'voceador_token_missing', $missing->get_error_code() );
+
+		$unreadable = $this->cli->read_token( array( 'token-file' => '/no/existe/token.txt' ) );
+		$this->assertInstanceOf( WP_Error::class, $unreadable );
+		$this->assertSame( 'voceador_token_file', $unreadable->get_error_code() );
+	}
+
+	public function test_resolve_channel_validates_numeric_and_existing(): void {
+		$this->assertNull( $this->cli->resolve_channel( array() ), 'Sin --channel, null.' );
+
+		$invalid = $this->cli->resolve_channel( array( 'channel' => 'abc' ) );
+		$this->assertInstanceOf( WP_Error::class, $invalid );
+
+		$missing = $this->cli->resolve_channel( array( 'channel' => '999999' ) );
+		$this->assertInstanceOf( WP_Error::class, $missing );
+
+		$this->responses[] = GraphResponses::ok(
+			array(
+				'id'   => '1001',
+				'name' => 'Mi Página',
+			)
+		);
+		$id                = $this->cli->add_facebook_page( '1001', 'EAAtoken' );
+		$this->assertSame( $id, $this->cli->resolve_channel( array( 'channel' => (string) $id ) ) );
+	}
+
+	public function test_retry_releases_and_reruns_failed_jobs(): void {
+		$this->responses[] = GraphResponses::ok(
+			array(
+				'id'   => '1001',
+				'name' => 'Mi Página',
+			)
+		);
+		$id                = $this->cli->add_facebook_page( '1001', 'EAAtoken' );
+		$post_id           = self::factory()->post->create( array( 'post_status' => 'publish' ) );
+		( new Settings() )->update( array( 'image' => array( 'no_image' => 'feed' ) ) );
+
+		$jobs   = new JobRepository( $GLOBALS['wpdb'], new Schema( $GLOBALS['wpdb'] ) );
+		$job_id = $jobs->create_if_absent( $post_id, $id, 'cli' );
+		$jobs->mark_failed( $job_id, 'transient', 'boom' );
+
+		$this->responses[] = GraphResponses::ok( array( 'id' => '1001_9' ) );
+		$this->assertSame( array( $id => 'published' ), $this->cli->retry( $post_id, null, false, false ) );
+		$this->assertSame( 'published', $jobs->find( $job_id )->status );
+	}
+
+	public function test_retry_ignores_jobs_not_in_a_retryable_status(): void {
+		$this->responses[] = GraphResponses::ok(
+			array(
+				'id'   => '1001',
+				'name' => 'Mi Página',
+			)
+		);
+		$id                = $this->cli->add_facebook_page( '1001', 'EAAtoken' );
+		$post_id           = self::factory()->post->create( array( 'post_status' => 'publish' ) );
+
+		$jobs = new JobRepository( $GLOBALS['wpdb'], new Schema( $GLOBALS['wpdb'] ) );
+		$jobs->create_if_absent( $post_id, $id, 'cli' ); // pending: no es failed/skipped/rate_limited.
+
+		$this->assertSame( array(), $this->cli->retry( $post_id, null, false, false ) );
+	}
+
+	public function test_retry_comment_retries_the_comment(): void {
+		$this->responses[] = GraphResponses::ok(
+			array(
+				'id'   => '1001',
+				'name' => 'Mi Página',
+			)
+		);
+		$id                = $this->cli->add_facebook_page( '1001', 'EAAtoken' );
+		$post_id           = self::factory()->post->create( array( 'post_status' => 'publish' ) );
+
+		$jobs   = new JobRepository( $GLOBALS['wpdb'], new Schema( $GLOBALS['wpdb'] ) );
+		$job_id = $jobs->create_if_absent( $post_id, $id, 'cli' );
+		$jobs->mark_published( $job_id, 'r', 'https://x', true );
+		$jobs->mark_comment_failed( $job_id, 'boom' );
+
+		$this->responses[] = GraphResponses::ok( array( 'id' => 'c1' ) );
+		$this->assertSame( array( $id => 'done' ), $this->cli->retry( $post_id, null, true, false ) );
+		$this->assertSame( 'done', $jobs->find( $job_id )->comment_status );
+	}
 }
