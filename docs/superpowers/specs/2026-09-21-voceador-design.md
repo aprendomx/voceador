@@ -99,7 +99,7 @@ Tablas y opciones por sitio. Defaults de red en `site_option` `voceador_network_
 | `settings` | LONGTEXT | JSON con overrides del canal (reglas, plantillas, imagen, ejecución, UTM) |
 | `created_at`, `updated_at` | DATETIME | UTC |
 
-Índices: `type`, `status`, UNIQUE `(type, remote_id)`.
+Índices: `status`, UNIQUE `(type, remote_id)` (el índice `type` se eliminó en el esquema v2 por redundante).
 
 **`voceador_jobs`** (una fila por post + canal)
 
@@ -120,7 +120,7 @@ Tablas y opciones por sitio. Defaults de red en `site_option` `voceador_network_
 | `source` | VARCHAR(20) | `auto`, `manual`, `cli`, `test` |
 | `created_at`, `updated_at` | DATETIME | UTC |
 
-Índices: `status`, `(channel_id, status)`, `scheduled_at`.
+Índices: `status`, `(channel_id, status)`, `scheduled_at`, `(status, scheduled_at)`.
 
 **`voceador_log`**
 

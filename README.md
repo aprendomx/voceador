@@ -38,6 +38,10 @@ npm run lint:fix               # corrige el formato automáticamente
 
 Para probar la desinstalación usa siempre `wp plugin uninstall voceador --skip-delete`: la carpeta del plugin en wp-env es este repositorio y sin ese flag WP-CLI borraría los archivos.
 
+## Cifrado de credenciales
+
+Los tokens de los canales se cifran con una clave derivada de `AUTH_KEY`/`SECURE_AUTH_KEY` (o de la constante `VOCEADOR_ENCRYPTION_KEY`, si se define; es la opción recomendada). Rotar esas salts invalida todos los canales conectados, que habrá que reconectar.
+
 ## Licencia
 
 GPL-2.0-or-later. Ver [LICENSE](LICENSE).
