@@ -108,7 +108,7 @@ final class ChannelRepository {
 		$row['created_at'] = $now;
 		$row['updated_at'] = $now;
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- El nombre de tabla viene de Schema::table(), no de entrada de usuario.
 		$inserted = $this->wpdb->insert( $this->table(), $row );
 
 		if ( false === $inserted ) {
@@ -122,7 +122,8 @@ final class ChannelRepository {
 	 * Actualiza campos de un canal.
 	 *
 	 * @param int   $id   Id.
-	 * @param array $data Campos a cambiar (misma forma que insert()).
+	 * @param array $data Campos a cambiar (misma forma que insert()); credentials
+	 *                    reemplaza el bloque completo, pasa siempre el array entero.
 	 * @return bool
 	 */
 	public function update( int $id, array $data ): bool {
@@ -132,7 +133,7 @@ final class ChannelRepository {
 		}
 		$row['updated_at'] = current_time( 'mysql', true );
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- El nombre de tabla viene de Schema::table(), no de entrada de usuario.
 		$updated = $this->wpdb->update( $this->table(), $row, array( 'id' => $id ) );
 
 		return false !== $updated;
@@ -189,7 +190,7 @@ final class ChannelRepository {
 			$sql = $this->wpdb->prepare( $sql, ...$values ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		}
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared -- El nombre de tabla viene de Schema::table(), no de entrada de usuario.
 		$rows = $this->wpdb->get_results( $sql, ARRAY_A );
 
 		return array_map( array( $this, 'hydrate' ), $rows ? $rows : array() );
@@ -236,7 +237,7 @@ final class ChannelRepository {
 	 * @return bool true si existía.
 	 */
 	public function delete( int $id ): bool {
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- El nombre de tabla viene de Schema::table(), no de entrada de usuario.
 		$deleted = $this->wpdb->delete( $this->table(), array( 'id' => $id ), array( '%d' ) );
 
 		return 1 === $deleted;
@@ -282,6 +283,7 @@ final class ChannelRepository {
 	 *
 	 * @param array $data Campos.
 	 * @return array Solo columnas conocidas, con JSON y cifrado aplicados.
+	 * @throws \InvalidArgumentException Si las credenciales no se pueden serializar a JSON.
 	 */
 	private function serialize( array $data ): array {
 		$row = array();
@@ -294,13 +296,19 @@ final class ChannelRepository {
 			$value = $data[ $column ];
 
 			if ( 'credentials' === $column ) {
-				$value = $this->crypto->encrypt( (string) wp_json_encode( is_array( $value ) ? $value : array() ) );
+				$encoded = wp_json_encode( is_array( $value ) ? $value : array() );
+
+				if ( false === $encoded ) {
+					throw new \InvalidArgumentException( esc_html( 'Las credenciales del canal no se pueden serializar a JSON.' ) );
+				}
+
+				$value = $this->crypto->encrypt( $encoded );
 			} elseif ( in_array( $column, self::JSON_COLUMNS, true ) ) {
 				$value = (string) wp_json_encode( is_array( $value ) ? $value : array() );
 			}
 
 			$row[ $column ] = $value;
-		}
+		}//end foreach
 
 		return $row;
 	}

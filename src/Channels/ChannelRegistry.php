@@ -50,6 +50,11 @@ final class ChannelRegistry {
 	 */
 	public function register( string $type, callable $factory ): void {
 		$this->factories[ $type ] = $factory;
+
+		// Invalida la instancia cacheada de este tipo: un registro con nueva factory
+		// (p. ej. sobrescribir un tipo ya registrado) no debe seguir sirviendo el
+		// adaptador construido con la factory anterior.
+		unset( $this->adapters[ $type ] );
 	}
 
 	/**
