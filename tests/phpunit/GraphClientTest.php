@@ -310,6 +310,30 @@ class GraphClientTest extends WP_UnitTestCase {
 		$this->assertStringNotContainsString( 'Zz9Zz9', $row['context'] . $row['message'] );
 	}
 
+	public function test_error_messages_are_redacted_at_the_source(): void {
+		$token          = 'EAA' . str_repeat( 'Ab1', 12 );
+		$this->response = $this->json(
+			400,
+			array(
+				'error' => array(
+					'message'        => 'Malformed access token ' . $token,
+					'type'           => 'OAuthException',
+					'code'           => 190,
+					'error_subcode'  => 0,
+					'error_user_msg' => 'Malformed access token ' . $token,
+					'fbtrace_id'     => 'trace',
+				),
+			)
+		);
+
+		$result = $this->client->get( 'me', array(), 't' );
+
+		$this->assertStringContainsString( '[redactado]', $result->get_error_message() );
+		$this->assertStringNotContainsString( 'EAAAb1', $result->get_error_message() );
+		$this->assertStringContainsString( '[redactado]', $result->get_error_data()['user_message'] );
+		$this->assertStringNotContainsString( 'EAAAb1', $result->get_error_data()['user_message'] );
+	}
+
 	public function test_timeout_is_filterable(): void {
 		add_filter( 'voceador_http_timeout', static fn() => 7 );
 		$this->client->get( 'me' );

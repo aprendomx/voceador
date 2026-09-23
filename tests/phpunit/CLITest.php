@@ -92,6 +92,16 @@ class CLITest extends WP_UnitTestCase {
 		$this->assertSame( 'voceador_channel_exists', $this->cli->add_facebook_page( '1001', 'EAAtoken' )->get_error_code() );
 	}
 
+	public function test_add_facebook_page_error_never_contains_token(): void {
+		$token             = 'EAA' . str_repeat( 'Ab1', 12 );
+		$this->responses[] = GraphResponses::error( 400, 190, 'Malformed access token ' . $token );
+
+		$error = $this->cli->add_facebook_page( '1', $token );
+
+		$this->assertInstanceOf( WP_Error::class, $error );
+		$this->assertStringNotContainsString( 'EAAAb1', $error->get_error_message() );
+	}
+
 	public function test_list_delete_and_status(): void {
 		$this->responses[] = GraphResponses::ok(
 			array(

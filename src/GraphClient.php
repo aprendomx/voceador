@@ -157,7 +157,9 @@ final class GraphClient {
 		$code    = (int) ( $error['code'] ?? 0 );
 		$subcode = (int) ( $error['error_subcode'] ?? 0 );
 		$class   = $this->classify( $http_code, $code );
-		$message = (string) ( $error['message'] ?? sprintf( /* translators: %d: código HTTP */ __( 'Respuesta HTTP %d de la Graph API.', 'voceador' ), $http_code ) );
+		// Se redacta aquí, en el origen del error, para que ningún consumidor (CLI,
+		// Publisher, adaptadores) pueda recibir un token en el mensaje.
+		$message = Logger::redact_string( (string) ( $error['message'] ?? sprintf( /* translators: %d: código HTTP */ __( 'Respuesta HTTP %d de la Graph API.', 'voceador' ), $http_code ) ) );
 
 		return new \WP_Error(
 			$class,
@@ -169,7 +171,7 @@ final class GraphClient {
 				'subcode'      => $subcode,
 				'type'         => (string) ( $error['type'] ?? '' ),
 				'fbtrace_id'   => (string) ( $error['fbtrace_id'] ?? '' ),
-				'user_message' => (string) ( $error['error_user_msg'] ?? '' ),
+				'user_message' => Logger::redact_string( (string) ( $error['error_user_msg'] ?? '' ) ),
 				'retry_after'  => $retry_after,
 			)
 		);

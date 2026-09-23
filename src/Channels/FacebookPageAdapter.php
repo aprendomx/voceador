@@ -8,6 +8,7 @@
 namespace Voceador\Channels;
 
 use Voceador\GraphClient;
+use Voceador\Logger;
 use Voceador\Settings;
 
 /**
@@ -69,7 +70,9 @@ final class FacebookPageAdapter implements ChannelAdapter {
 		$me = $this->graph->get( 'me', array( 'fields' => 'id,name' ), (string) $c->credential( 'access_token' ) );
 
 		if ( is_wp_error( $me ) ) {
-			return new HealthReport( false, $me->get_error_message(), array(), array(), null, (array) $me->get_error_data() );
+			// Defensa en profundidad: GraphClient::normalize_error() ya redacta el mensaje
+			// en origen, pero el error también puede venir de un fallo de transporte.
+			return new HealthReport( false, Logger::redact_string( $me->get_error_message() ), array(), array(), null, (array) $me->get_error_data() );
 		}
 
 		$id = (string) ( $me['id'] ?? '' );

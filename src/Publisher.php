@@ -184,9 +184,13 @@ final class Publisher implements Registrable {
 	 * @return string Estado resultante.
 	 */
 	public function handle_error( Job $job, Channel $channel, \WP_Error $error ): string {
-		$class    = (string) $error->get_error_code();
-		$data     = (array) $error->get_error_data();
-		$message  = $error->get_error_message();
+		$class = (string) $error->get_error_code();
+		$data  = (array) $error->get_error_data();
+		// Defensa en profundidad: GraphClient ya redacta en origen, pero handle_error()
+		// también recibe errores que no vienen de Graph (excepciones, channel_unavailable).
+		// Una sola redacción aquí cubre mark_failed(), set_status() y add_notice() de abajo.
+		$message = Logger::redact_string( $error->get_error_message() );
+
 		$attempts = $this->jobs->find( $job->id )?->attempts ?? $job->attempts;
 		$retries  = (int) $this->settings->get( 'execution.retries', $channel->settings );
 		$context  = array(
