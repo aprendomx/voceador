@@ -21,6 +21,9 @@ final class Plugin {
 	 */
 	private const REGISTRABLES = array(
 		Installer::class,
+		Queue::class,
+		Publisher::class,
+		Trigger::class,
 	);
 
 	/**
@@ -148,8 +151,16 @@ final class Plugin {
 			return new Settings();
 		};
 
-		$this->factories[ Channels\ChannelRegistry::class ] = static function (): Channels\ChannelRegistry {
-			return new Channels\ChannelRegistry();
+		$this->factories[ Channels\ChannelRegistry::class ] = static function ( Plugin $c ): Channels\ChannelRegistry {
+			return new Channels\ChannelRegistry(
+				array(
+					Channels\FacebookPageAdapter::type() => static fn() => $c->get( Channels\FacebookPageAdapter::class ),
+				)
+			);
+		};
+
+		$this->factories[ Channels\FacebookPageAdapter::class ] = static function ( Plugin $c ): Channels\FacebookPageAdapter {
+			return new Channels\FacebookPageAdapter( $c->get( GraphClient::class ), $c->get( Settings::class ) );
 		};
 
 		$this->factories[ ChannelRepository::class ] = static function ( Plugin $c ): ChannelRepository {
@@ -170,6 +181,38 @@ final class Plugin {
 		$this->factories[ GraphClient::class ] = static function ( Plugin $c ): GraphClient {
 			return new GraphClient( $c->get( Settings::class ), $c->get( Logger::class ) );
 		};
+
+		$this->factories[ Templates::class ] = static function ( Plugin $c ): Templates {
+			return new Templates( $c->get( Settings::class ) );
+		};
+
+		$this->factories[ Queue::class ] = static function ( Plugin $c ): Queue {
+			return new Queue( $c->get( JobRepository::class ), $c->get( Logger::class ) );
+		};
+
+		$this->factories[ Publisher::class ] = static function ( Plugin $c ): Publisher {
+			return new Publisher(
+				$c->get( JobRepository::class ),
+				$c->get( ChannelRepository::class ),
+				$c->get( Channels\ChannelRegistry::class ),
+				$c->get( Templates::class ),
+				$c->get( Settings::class ),
+				$c->get( Logger::class ),
+				$c->get( Queue::class )
+			);
+		};
+
+		$this->factories[ Rules::class ] = static function ( Plugin $c ): Rules {
+			return new Rules( $c->get( ChannelRepository::class ), $c->get( Settings::class ) );
+		};
+
+		$this->factories[ Trigger::class ] = static function ( Plugin $c ): Trigger {
+			return new Trigger( $c->get( Rules::class ), $c->get( JobRepository::class ), $c->get( Queue::class ), $c->get( Settings::class ), $c->get( Logger::class ) );
+		};
+
+		$this->factories[ CLI::class ] = static function ( Plugin $c ): CLI {
+			return new CLI( $c->get( ChannelRepository::class ), $c->get( Channels\ChannelRegistry::class ), $c->get( Publisher::class ), $c->get( JobRepository::class ), $c->get( Queue::class ), $c->get( Logger::class ) );
+		};
 	}
 
 	/**
@@ -181,6 +224,10 @@ final class Plugin {
 			if ( $service instanceof Registrable ) {
 				$service->register_hooks();
 			}
+		}
+
+		if ( defined( 'WP_CLI' ) && WP_CLI ) {
+			$this->get( CLI::class )->register();
 		}
 	}
 }

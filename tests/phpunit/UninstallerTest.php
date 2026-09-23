@@ -50,6 +50,7 @@ class UninstallerTest extends WP_UnitTestCase {
 		update_option( VOCEADOR_PREFIX . 'settings', array( 'rules' => array() ), false );
 		update_option( VOCEADOR_PREFIX . 'app', array( 'app_id' => '1' ), false );
 		add_option( VOCEADOR_PREFIX . 'crypto_seed', '', '', false );
+		add_option( VOCEADOR_PREFIX . 'cron_last_run', time(), '', false );
 		set_transient( VOCEADOR_PREFIX . 'lock_job_5', 1, 60 );
 
 		Uninstaller::clean_site();
@@ -80,6 +81,16 @@ class UninstallerTest extends WP_UnitTestCase {
 		Uninstaller::clean_site();
 
 		$this->assertFalse( wp_next_scheduled( VOCEADOR_PREFIX . 'check_tokens' ) );
+	}
+
+	public function test_clears_run_job_and_run_comment_cron_hooks(): void {
+		wp_schedule_single_event( time() + 60, VOCEADOR_PREFIX . 'run_job', array( 1 ) );
+		wp_schedule_single_event( time() + 60, VOCEADOR_PREFIX . 'run_comment', array( 1 ) );
+
+		Uninstaller::clean_site();
+
+		$this->assertFalse( wp_next_scheduled( VOCEADOR_PREFIX . 'run_job', array( 1 ) ) );
+		$this->assertFalse( wp_next_scheduled( VOCEADOR_PREFIX . 'run_comment', array( 1 ) ) );
 	}
 
 	public function test_keeps_post_meta_by_default(): void {

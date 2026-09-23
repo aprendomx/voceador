@@ -82,7 +82,7 @@ class JobRepositoryTest extends WP_UnitTestCase {
 		$job = $this->repo->find( $id );
 		$this->assertSame( 'failed', $job->comment_status );
 		$this->assertSame( 1, $job->comment_attempts );
-		$this->assertSame( 'spam', $job->error_message );
+		$this->assertSame( 'Comentario: spam', $job->error_message, 'Prefijo para distinguirlo del error de la publicación, que comparte columna.' );
 		$this->assertSame( 'published', $job->status, 'El fallo del comentario no toca el estado principal.' );
 
 		$this->assertTrue( $this->repo->mark_comment_done( $id, '1001_2002_3003' ) );
@@ -174,5 +174,110 @@ class JobRepositoryTest extends WP_UnitTestCase {
 		$job = $this->repo->find( $id );
 		$this->assertSame( 'failed', $job->status );
 		$this->assertSame( 'c1', $job->remote_comment_id );
+	}
+
+	public function test_claim_from_rate_limited_does_not_consume_attempt(): void {
+		$id = $this->repo->create_if_absent( 30, 1 );
+		$this->repo->claim( $id );
+		$this->assertSame( 1, $this->repo->find( $id )->attempts );
+
+		$this->repo->mark_rate_limited( $id, '2020-01-01 00:00:00', 'Sin cupo' );
+		$this->assertTrue( $this->repo->claim( $id ) );
+		$this->assertSame( 1, $this->repo->find( $id )->attempts, 'Reanudar tras límite de uso no cuenta como intento.' );
+
+		$this->repo->mark_failed( $id, 'transient', 'x' );
+		$this->assertTrue( $this->repo->claim( $id ) );
+		$this->assertSame( 2, $this->repo->find( $id )->attempts );
+	}
+
+	public function test_due_rate_limited(): void {
+		$past   = $this->repo->create_if_absent( 31, 1 );
+		$future = $this->repo->create_if_absent( 31, 2 );
+		$this->repo->mark_rate_limited( $past, '2020-01-01 00:00:00', 'x' );
+		$this->repo->mark_rate_limited( $future, '2099-01-01 00:00:00', 'x' );
+
+		$ids = array_map( static fn( Job $j ) => $j->id, $this->repo->due_rate_limited() );
+
+		$this->assertSame( array( $past ), $ids );
+	}
+
+	public function test_stale_running(): void {
+		global $wpdb;
+		$old = $this->repo->create_if_absent( 32, 1 );
+		$new = $this->repo->create_if_absent( 32, 2 );
+		$this->repo->claim( $old );
+		$this->repo->claim( $new );
+		$wpdb->update( ( new Schema( $wpdb ) )->table( 'jobs' ), array( 'updated_at' => '2020-01-01 00:00:00' ), array( 'id' => $old ) );
+
+		$ids = array_map( static fn( Job $j ) => $j->id, $this->repo->stale_running( 900 ) );
+
+		$this->assertSame( array( $old ), $ids );
+	}
+
+	public function test_retry_comment_only_from_failed_on_published_jobs(): void {
+		$id = $this->repo->create_if_absent( 33, 1 );
+		$this->repo->mark_published( $id, 'r', '', true );
+		$this->repo->mark_comment_failed( $id, 'spam' );
+
+		$this->assertTrue( $this->repo->retry_comment( $id ) );
+		$this->assertSame( 'pending', $this->repo->find( $id )->comment_status );
+		$this->assertFalse( $this->repo->retry_comment( $id ), 'Ya está pendiente.' );
+
+		$other = $this->repo->create_if_absent( 33, 2 );
+		$this->repo->mark_comment_failed( $other, 'x' );
+		$this->assertFalse( $this->repo->retry_comment( $other ), 'No está publicado.' );
+	}
+
+	public function test_mark_unverified(): void {
+		$id = $this->repo->create_if_absent( 34, 1 );
+		$this->repo->claim( $id );
+
+		$this->assertTrue( $this->repo->mark_unverified( $id, 'Timeout tras enviar EAA' . str_repeat( 'Ab1', 10 ) ) );
+		$job = $this->repo->find( $id );
+		$this->assertSame( 'failed', $job->status );
+		$this->assertSame( 'unverified', $job->error_code );
+		$this->assertStringNotContainsString( 'EAAAb1', $job->error_message );
+	}
+
+	public function test_claim_comment_and_stale_comment_running(): void {
+		global $wpdb;
+		$id = $this->repo->create_if_absent( 35, 1 );
+		$this->repo->mark_published( $id, 'r', '', true );
+
+		$this->assertTrue( $this->repo->claim_comment( $id ) );
+		$this->assertSame( 'running', $this->repo->find( $id )->comment_status );
+		$this->assertFalse( $this->repo->claim_comment( $id ), 'Un comentario en running no se puede reclamar de nuevo.' );
+
+		$not_published = $this->repo->create_if_absent( 35, 2 );
+		$this->assertFalse( $this->repo->claim_comment( $not_published ), 'El trabajo no está publicado.' );
+
+		$this->repo->mark_comment_failed( $id, 'boom' );
+		$this->assertTrue( $this->repo->claim_comment( $id ), 'Un comentario failed se puede reclamar.' );
+
+		$wpdb->update( ( new Schema( $wpdb ) )->table( 'jobs' ), array( 'updated_at' => '2020-01-01 00:00:00' ), array( 'id' => $id ) );
+
+		$ids = array_map( static fn( Job $j ) => $j->id, $this->repo->stale_comment_running( 900 ) );
+		$this->assertSame( array( $id ), $ids );
+	}
+
+	public function test_set_comment_status_does_not_touch_attempts_or_error(): void {
+		$id = $this->repo->create_if_absent( 36, 1 );
+		$this->repo->mark_published( $id, 'r', '', true );
+		$this->repo->mark_comment_failed( $id, 'boom' );
+
+		$this->assertTrue( $this->repo->set_comment_status( $id, 'failed' ) );
+
+		$job = $this->repo->find( $id );
+		$this->assertSame( 'failed', $job->comment_status );
+		$this->assertSame( 1, $job->comment_attempts, 'A diferencia de mark_comment_failed(), no incrementa attempts.' );
+		$this->assertSame( 'Comentario: boom', $job->error_message, 'No toca error_message.' );
+	}
+
+	public function test_skipped_is_claimable(): void {
+		$id = $this->repo->create_if_absent( 37, 1 );
+		$this->repo->mark_skipped( $id, 'Sin imagen destacada' );
+
+		$this->assertTrue( $this->repo->claim( $id ), 'skipped es reclamable (solo por una ejecución explícita).' );
+		$this->assertSame( 'running', $this->repo->find( $id )->status );
 	}
 }

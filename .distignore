@@ -16,6 +16,8 @@ node_modules
 vendor
 docs
 tests
+bin
+build-zip
 README.md
 .phpunit.result.cache
 .superpowers

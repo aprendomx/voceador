@@ -108,7 +108,7 @@ Tablas y opciones por sitio. Defaults de red en `site_option` `voceador_network_
 | `id` | BIGINT UNSIGNED PK AI | |
 | `post_id`, `channel_id` | BIGINT UNSIGNED | UNIQUE `(post_id, channel_id)`: idempotencia a nivel de BD |
 | `status` | VARCHAR(20) | `pending`, `running`, `published`, `failed`, `rate_limited`, `skipped` |
-| `comment_status` | VARCHAR(20) | `none`, `pending`, `done`, `failed` |
+| `comment_status` | VARCHAR(20) | `none`, `pending`, `running`, `done`, `failed` |
 | `remote_id` | VARCHAR(100) NULL | `post_id` de Facebook / `ig_media_id` |
 | `remote_url` | TEXT NULL | Permalink de la publicación |
 | `remote_comment_id` | VARCHAR(100) NULL | |
@@ -137,9 +137,10 @@ Tablas y opciones por sitio. Defaults de red en `site_option` `voceador_network_
 | `voceador_wizard` | Paso actual, pasos completados, `dismissed`, `completed_at` |
 | `voceador_notices` | Avisos persistentes del admin |
 | `voceador_crypto_seed` | Semilla de la clave de cifrado, solo si no hay salts utilizables (ver Cifrado) |
+| `voceador_cron_last_run` | Marca de la última ejecución de la cola, para detectar cron del sistema |
 | `voceador_network_defaults` (`site_option`) | Defaults de red |
 
-Transients: `voceador_lock_job_{id}`, `voceador_oauth_state_{hash}` (10 min, ligado al usuario), `voceador_activation_redirect`, `voceador_ig_usage_{channel_id}`.
+Transients: `voceador_lock_job_{id}`, `voceador_lock_comment_{id}`, `voceador_oauth_state_{hash}` (10 min, ligado al usuario), `voceador_activation_redirect`, `voceador_ig_usage_{channel_id}`.
 
 ### Post meta
 
@@ -153,6 +154,7 @@ El estado por canal vive en `voceador_jobs`, no en post meta.
 
 - `voceador_manage` se añade a `administrator` al activar.
 - Cron diario: `voceador_check_tokens`, `voceador_refresh_ig_tokens` (renueva tokens con menos de 10 días de vida), `voceador_purge_log`.
+- Cron horario: `voceador_sweep` (reprograma trabajos vencidos y marca como `unverified` los atascados en `running`).
 - `uninstall.php`: borra opciones, transients, las tres tablas, la capacidad, los crons y las imágenes generadas; los metas `_voceador_*` solo si `settings.uninstall.delete_meta` está activo. En Multisite recorre todos los sitios.
 
 ### Cifrado

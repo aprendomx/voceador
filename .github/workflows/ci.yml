@@ -58,6 +58,8 @@ jobs:
           test "$(npx wp-env run cli wp db query "SHOW TABLES LIKE '%voceador%'" --skip-column-names | grep -c voceador)" -eq 3
           test "$(npx wp-env run cli wp option get voceador_db_version)" = "2"
           npx wp-env run cli wp cap list administrator | grep -q '^voceador_manage$'
+          npx wp-env run cli wp voceador status
+          test "$(npx wp-env run cli wp voceador channels list --format=json)" = "[]"
           npx wp-env run cli wp option update voceador_db_version 1
           npx wp-env run cli wp db query "ALTER TABLE wp_voceador_channels ADD KEY type (type)"
           npx wp-env run cli wp eval 'do_action("init");'

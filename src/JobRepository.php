@@ -19,8 +19,11 @@ final class JobRepository {
 
 	/**
 	 * Estados desde los que se puede reclamar un trabajo.
+	 *
+	 * 'skipped' no lo programa nada automáticamente (due() solo lee 'pending'); solo lo
+	 * reclama una ejecución explícita, por ejemplo tras añadir la imagen que faltaba.
 	 */
-	private const CLAIMABLE = array( 'pending', 'failed', 'rate_limited' );
+	private const CLAIMABLE = array( 'pending', 'failed', 'rate_limited', 'skipped' );
 
 	/**
 	 * Constructor.
@@ -104,8 +107,8 @@ final class JobRepository {
 	/**
 	 * Reclama un trabajo para ejecutarlo. Solo un proceso puede ganar.
 	 *
-	 * Incrementa attempts; la política de límite de uso que no consume
-	 * intentos se resuelve en la fase 1b (ver plan).
+	 * Incrementa attempts salvo cuando reanuda un trabajo en espera por
+	 * límite de uso (rate_limited), que no cuenta como intento.
 	 *
 	 * @param int $id Id.
 	 * @return bool true si este proceso lo reclamó.
@@ -114,7 +117,20 @@ final class JobRepository {
 		$placeholders = implode( ',', array_fill( 0, count( self::CLAIMABLE ), '%s' ) );
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- El nombre de tabla viene de Schema::table(); el número de reemplazos depende de CLAIMABLE y el sniff no lo puede contar estáticamente.
-		$this->wpdb->query( $this->wpdb->prepare( "UPDATE {$this->table()} SET status = 'running', attempts = attempts + 1, updated_at = %s WHERE id = %d AND status IN ({$placeholders})", current_time( 'mysql', true ), $id, ...self::CLAIMABLE ) );
+		$this->wpdb->query( $this->wpdb->prepare( "UPDATE {$this->table()} SET attempts = attempts + IF(status = 'rate_limited', 0, 1), status = 'running', updated_at = %s WHERE id = %d AND status IN ({$placeholders})", current_time( 'mysql', true ), $id, ...self::CLAIMABLE ) );
+
+		return 1 === $this->wpdb->rows_affected;
+	}
+
+	/**
+	 * Reclama el comentario de un trabajo publicado para enviarlo. Solo un proceso puede ganar.
+	 *
+	 * @param int $id Id del trabajo.
+	 * @return bool true si este proceso lo reclamó.
+	 */
+	public function claim_comment( int $id ): bool {
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- El nombre de tabla viene de Schema::table(), no de entrada de usuario.
+		$this->wpdb->query( $this->wpdb->prepare( "UPDATE {$this->table()} SET comment_status = 'running', updated_at = %s WHERE id = %d AND status = 'published' AND comment_status IN ('pending', 'failed')", current_time( 'mysql', true ), $id ) );
 
 		return 1 === $this->wpdb->rows_affected;
 	}
@@ -237,6 +253,9 @@ final class JobRepository {
 	/**
 	 * Registra un fallo al comentar sin tocar el estado principal.
 	 *
+	 * El mensaje se guarda con el prefijo "Comentario: " porque error_message comparte
+	 * columna con el error de la publicación principal, para poder distinguirlos.
+	 *
 	 * Devuelve false solo si la consulta falló, igual que set(): no se basa en
 	 * rows_affected porque repetir el mismo error no cambia ninguna columna y
 	 * no debe interpretarse como que el trabajo no existe.
@@ -247,9 +266,23 @@ final class JobRepository {
 	 */
 	public function mark_comment_failed( int $id, string $error_message ): bool {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- El nombre de tabla viene de Schema::table(), no de entrada de usuario.
-		$result = $this->wpdb->query( $this->wpdb->prepare( "UPDATE {$this->table()} SET comment_status = 'failed', comment_attempts = comment_attempts + 1, error_message = %s, updated_at = %s WHERE id = %d", Logger::redact_string( $error_message ), current_time( 'mysql', true ), $id ) );
+		$result = $this->wpdb->query( $this->wpdb->prepare( "UPDATE {$this->table()} SET comment_status = 'failed', comment_attempts = comment_attempts + 1, error_message = %s, updated_at = %s WHERE id = %d", Logger::redact_string( 'Comentario: ' . $error_message ), current_time( 'mysql', true ), $id ) );
 
 		return false !== $result;
+	}
+
+	/**
+	 * Fija el estado del comentario sin tocar attempts ni error.
+	 *
+	 * Para el guard de intentos agotados de Publisher::execute_comment(): a diferencia de
+	 * mark_comment_failed(), no incrementa comment_attempts (ya está en el tope).
+	 *
+	 * @param int    $id     Id.
+	 * @param string $status Uno de los estados de comment_status.
+	 * @return bool true salvo error de consulta.
+	 */
+	public function set_comment_status( int $id, string $status ): bool {
+		return $this->set( $id, array( 'comment_status' => $status ) );
 	}
 
 	/**
@@ -263,6 +296,85 @@ final class JobRepository {
 		$rows = $this->wpdb->get_results( $this->wpdb->prepare( "SELECT * FROM {$this->table()} WHERE status = 'pending' AND (scheduled_at IS NULL OR scheduled_at <= %s) ORDER BY scheduled_at IS NULL DESC, scheduled_at ASC, id ASC LIMIT %d", current_time( 'mysql', true ), $limit ), ARRAY_A );
 
 		return array_map( static fn( array $row ) => new Job( $row ), $rows ? $rows : array() );
+	}
+
+	/**
+	 * Trabajos en espera por límite de uso cuya hora de reintento ya llegó.
+	 *
+	 * @param int $limit Máximo.
+	 * @return Job[]
+	 */
+	public function due_rate_limited( int $limit = 50 ): array {
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- El nombre de tabla viene de Schema::table(), no de entrada de usuario.
+		$rows = $this->wpdb->get_results( $this->wpdb->prepare( "SELECT * FROM {$this->table()} WHERE status = 'rate_limited' AND scheduled_at IS NOT NULL AND scheduled_at <= %s ORDER BY scheduled_at ASC, id ASC LIMIT %d", current_time( 'mysql', true ), $limit ), ARRAY_A );
+
+		return array_map( static fn( array $row ) => new Job( $row ), $rows ? $rows : array() );
+	}
+
+	/**
+	 * Trabajos que llevan demasiado tiempo en running (el proceso murió a mitad).
+	 *
+	 * @param int $older_than_seconds Antigüedad mínima de updated_at.
+	 * @param int $limit              Máximo.
+	 * @return Job[]
+	 */
+	public function stale_running( int $older_than_seconds = 900, int $limit = 50 ): array {
+		$cutoff = gmdate( 'Y-m-d H:i:s', time() - $older_than_seconds );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- El nombre de tabla viene de Schema::table(), no de entrada de usuario.
+		$rows = $this->wpdb->get_results( $this->wpdb->prepare( "SELECT * FROM {$this->table()} WHERE status = 'running' AND updated_at < %s ORDER BY updated_at ASC, id ASC LIMIT %d", $cutoff, $limit ), ARRAY_A );
+
+		return array_map( static fn( array $row ) => new Job( $row ), $rows ? $rows : array() );
+	}
+
+	/**
+	 * Comentarios que llevan demasiado tiempo en running (el proceso murió a mitad).
+	 *
+	 * @param int $older_than_seconds Antigüedad mínima de updated_at.
+	 * @param int $limit              Máximo.
+	 * @return Job[]
+	 */
+	public function stale_comment_running( int $older_than_seconds = 900, int $limit = 50 ): array {
+		$cutoff = gmdate( 'Y-m-d H:i:s', time() - $older_than_seconds );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- El nombre de tabla viene de Schema::table(), no de entrada de usuario.
+		$rows = $this->wpdb->get_results( $this->wpdb->prepare( "SELECT * FROM {$this->table()} WHERE comment_status = 'running' AND updated_at < %s ORDER BY updated_at ASC, id ASC LIMIT %d", $cutoff, $limit ), ARRAY_A );
+
+		return array_map( static fn( array $row ) => new Job( $row ), $rows ? $rows : array() );
+	}
+
+	/**
+	 * Vuelve a dejar pendiente el comentario de un trabajo publicado.
+	 *
+	 * @param int $id Id.
+	 * @return bool true si había un comentario fallido que reintentar.
+	 */
+	public function retry_comment( int $id ): bool {
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- El nombre de tabla viene de Schema::table(), no de entrada de usuario.
+		$this->wpdb->query( $this->wpdb->prepare( "UPDATE {$this->table()} SET comment_status = 'pending', updated_at = %s WHERE id = %d AND status = 'published' AND comment_status = 'failed'", current_time( 'mysql', true ), $id ) );
+
+		return 1 === $this->wpdb->rows_affected;
+	}
+
+	/**
+	 * Marca un trabajo cuyo envío pudo llegar a la red sin respuesta.
+	 *
+	 * No se republica a ciegas: queda en failed con código unverified para que
+	 * la redacción verifique en la red antes de reintentar.
+	 *
+	 * @param int    $id      Id.
+	 * @param string $message Explicación.
+	 * @return bool true salvo error de consulta.
+	 */
+	public function mark_unverified( int $id, string $message ): bool {
+		return $this->set(
+			$id,
+			array(
+				'status'        => 'failed',
+				'error_code'    => 'unverified',
+				'error_message' => Logger::redact_string( $message ),
+			)
+		);
 	}
 
 	/**

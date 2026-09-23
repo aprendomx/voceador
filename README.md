@@ -36,7 +36,34 @@ npm run lint:fix               # corrige el formato automáticamente
 
 `npm run test` excluye el grupo `ms-required`; esos tests solo corren con `npm run test:multisite`.
 
+### WP-CLI
+
+Con el plugin activo, `wp voceador` expone estos comandos:
+
+```bash
+wp voceador channels add-facebook --page-id=<id> [--token=<page-token>] [--token-file=<ruta|->] [--alias=<alias>]
+wp voceador channels list [--format=<table|json|csv>]
+wp voceador channels delete <id>
+wp voceador publish <post_id> [--channel=<id>] [--source=<source>] [--force]
+wp voceador retry <post_id> [--channel=<id>] [--comment] [--force]
+wp voceador status
+```
+
+`channels add-facebook` valida el Page Access Token contra `/me` antes de guardar el canal; el token nunca se imprime ni se registra. Pásalo con `--token-file`, no con `--token`: la forma recomendada es leerlo por STDIN con `--token-file=-` para que no quede en el historial de shell ni en el log de sudo:
+
+```bash
+printf '%s' "$TOKEN" | wp voceador channels add-facebook --page-id=<id> --token-file=-
+```
+
+`--token-file=<ruta>` lee el token de un archivo; `--token` (menos recomendable) lo acepta en la propia línea de comandos.
+
+`publish` reintenta un post en los canales activos (o en uno concreto con `--channel`) y sale con código 1 si algún canal queda en `failed`; `--force` reintenta también trabajos marcados como no verificados (`unverified`). `retry` reintenta los trabajos ya existentes de un post que estén en `failed`, `skipped` o `rate_limited` (o, con `--comment`, el comentario de un trabajo ya publicado); acepta `--channel` y `--force` igual que `publish`. `status` resume canales por estado, trabajos por estado, si hay Action Scheduler o cron disponible, y los últimos eventos del log.
+
+`npm run build:zip` genera el ZIP distribuible en `build-zip/`.
+
 Para probar la desinstalación usa siempre `wp plugin uninstall voceador --skip-delete`: la carpeta del plugin en wp-env es este repositorio y sin ese flag WP-CLI borraría los archivos.
+
+En la suite de tests el `Trigger` global está desenganchado; los tests que lo necesiten registran su propia instancia.
 
 ## Cifrado de credenciales
 
