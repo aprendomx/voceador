@@ -239,16 +239,19 @@ class PublisherTest extends WP_UnitTestCase {
 			10,
 			3
 		);
-		$this->responses[] = GraphResponses::error( 400, 190, 'Error validating access token' );
+		$token             = 'EAA' . str_repeat( 'Ab1', 12 );
+		$this->responses[] = GraphResponses::error( 400, 190, 'Error validating access token ' . $token );
 
 		$this->assertSame( 'failed', $this->publisher->run( $this->job() ) );
 
 		$channel = $this->channels->find( $this->channel_id );
 		$this->assertSame( 'paused', $channel->status );
 		$this->assertStringContainsString( 'access token', $channel->health['message'] );
+		$this->assertStringNotContainsString( $token, $channel->health['message'] );
 		$this->assertSame( array( 'auth' ), $failed );
 		$notices = get_option( VOCEADOR_PREFIX . 'notices' );
 		$this->assertArrayHasKey( 'channel_paused_' . $this->channel_id, $notices );
+		$this->assertStringNotContainsString( $token, $notices[ 'channel_paused_' . $this->channel_id ]['message'] );
 	}
 
 	public function test_paused_channel_fails_without_calling_graph(): void {

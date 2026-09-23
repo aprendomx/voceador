@@ -279,7 +279,9 @@ final class CLI {
 
 		$result = $this->add_facebook_page( $page_id, $token, (string) ( $assoc_args['alias'] ?? '' ) );
 		if ( is_wp_error( $result ) ) {
-			\WP_CLI::error( $result->get_error_message() );
+			// Defensa en profundidad: el mensaje puede venir de Graph (vía validate_credentials()),
+			// que ya redacta en origen, pero se redacta también aquí antes de imprimirlo.
+			\WP_CLI::error( Logger::redact_string( $result->get_error_message() ) );
 		}
 
 		\WP_CLI::success( sprintf( 'Canal %d conectado.', $result ) );
@@ -377,7 +379,16 @@ final class CLI {
 		\WP_CLI::line( 'Cron disponible: ' . ( $status['cron_available'] ? 'sí' : 'no' ) );
 
 		if ( $status['recent_log'] ) {
-			\WP_CLI\Utils\format_items( 'table', $status['recent_log'], array( 'created_at', 'level', 'event', 'message' ) );
+			// Defensa en profundidad: el mensaje ya viene redactado de Logger::log(), pero
+			// se redacta también aquí antes de imprimirlo.
+			$rows = array_map(
+				static function ( array $row ): array {
+					$row['message'] = Logger::redact_string( $row['message'] );
+					return $row;
+				},
+				$status['recent_log']
+			);
+			\WP_CLI\Utils\format_items( 'table', $rows, array( 'created_at', 'level', 'event', 'message' ) );
 		}
 	}
 
@@ -396,7 +407,9 @@ final class CLI {
 				'channel'    => $channel_id,
 				'status'     => $status,
 				'remote_url' => (string) ( $job->remote_url ?? '' ),
-				'error'      => (string) ( $job->error_message ?? '' ),
+				// Defensa en profundidad: error_message ya viene redactado desde
+				// Publisher::handle_error(), pero se redacta también aquí antes de imprimirlo.
+				'error'      => Logger::redact_string( (string) ( $job->error_message ?? '' ) ),
 			);
 		}
 		\WP_CLI\Utils\format_items( 'table', $rows, array( 'channel', 'status', 'remote_url', 'error' ) );
