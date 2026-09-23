@@ -2,7 +2,7 @@
 
 **Voceador – Autopublicación de notas en redes sociales** es un plugin de WordPress que anuncia automáticamente en Páginas de Facebook y cuentas de Instagram cada nota que se publica por primera vez en un sitio de noticias.
 
-> Estado: fase 1a completada (contenedor, cifrado, ajustes, contratos de canal, repositorios, log y cliente de Graph API). El plugin todavía no publica en redes; eso llega en la fase 1b.
+> Estado: fase 1b completada: publica en Páginas de Facebook con token manual (foto + comentario), con cola, reintentos y WP-CLI. Verificado en staging el 2026-09-23 (la foto; el comentario queda pendiente de que la app de Meta tenga `pages_manage_engagement`). Falta OAuth, Instagram, editor, wizard y ajustes.
 
 ## Documentación
 
