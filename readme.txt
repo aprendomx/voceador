@@ -1,54 +1,91 @@
 === Voceador – Autopublicación de notas en redes sociales ===
 Contributors: aprendomx
-Tags: social media, auto publish, news, facebook, instagram
-Requires at least: 6.4
-Tested up to: 6.8
+Tags: social media, autoposting, facebook, news, publishing
+Requires at least: 6.5
+Tested up to: 7.1
 Requires PHP: 8.1
 Stable tag: 0.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Anuncia automáticamente cada nota nueva en tus Páginas de Facebook y cuentas de Instagram, con plantillas, reglas por canal y página de link en bio.
+Automatically announces every new post on your Facebook Pages: the featured image, a caption from a template and a comment with the link.
 
 == Description ==
 
-Voceador anuncia en redes sociales cada nota que se publica por primera vez en tu sitio de noticias.
+Voceador announces on social media every post that a news site publishes for the first time. It is built for newsrooms that run several sites and need each one to post to its own Pages without anyone remembering to do it by hand.
 
-* **Páginas de Facebook**: publica la imagen destacada como foto con un caption generado desde plantilla y deja un comentario de la Página con el enlace a la nota.
-* **Cuentas de Instagram profesionales**: publica la imagen destacada adaptada a los requisitos de Instagram, con caption y primer comentario opcional, y genera una página de "link en bio".
-* **Canales**: cada destino tiene sus propias credenciales, reglas, plantillas y estado de salud. Un fallo en un canal no bloquea a los demás.
-* **Pensado para redacciones**: panel "Redes" en el editor, vista previa del caption, estado por canal y reintentos manuales.
-* **Para redes de medios**: compatible con Multisite, import/export de configuración y comandos WP-CLI.
+When a post is published, Voceador queues one job per connected channel and, for each Facebook Page:
 
-Este plugin está en desarrollo activo; todavía no hay una versión estable.
+1. Publishes the featured image as a photo with a caption rendered from a template.
+2. After a configurable delay, leaves a comment from the Page itself with the link to the post.
+
+**What is included in this version**
+
+* Connect one or more Facebook Pages using a Page access token.
+* Caption and comment templates with placeholders: `{title}`, `{excerpt}`, `{permalink}`, `{shortlink}`, `{site_name}`, `{author}`, `{category}`, `{categories}`, `{date}` and `{social_message}` with a configurable fallback chain.
+* Routing rules per channel by post type, plus per-post overrides through post meta.
+* A queue that uses Action Scheduler when another plugin provides it and falls back to WP-Cron, with delays, retries and exponential backoff.
+* Error handling per class: temporary errors are retried, rate limits are rescheduled, and authentication or permission errors pause the channel instead of retrying.
+* An activity log in its own table that never records tokens or secrets.
+* Access tokens encrypted at rest with libsodium.
+* WP-CLI commands: `wp voceador channels add-facebook`, `channels list`, `channels delete`, `publish`, `retry` and `status`.
+* Works on single sites and on Multisite, with per-site configuration.
+
+**On the roadmap**
+
+Facebook Login (OAuth) instead of manual tokens, token health monitoring, a settings screen, an editor panel for the newsroom, Instagram support with image processing and a link-in-bio page, an onboarding wizard and email notifications.
+
+**Requirements**
+
+A Meta app and a Facebook Page you administer. Only professional Instagram accounts (Business or Creator) will be supported when Instagram support lands, because Meta does not allow publishing to personal accounts through its API.
+
+The plugin interface and documentation are written in Spanish.
 
 == External services ==
 
-Este plugin se conecta a la Graph API de Meta (graph.facebook.com y graph.instagram.com) para publicar contenido en las Páginas de Facebook y cuentas de Instagram que el administrador conecte de forma explícita.
+This plugin connects to Meta's Graph API (graph.facebook.com and, in future versions, graph.instagram.com) in order to publish content to the Facebook Pages and Instagram accounts that the site administrator explicitly connects.
 
-* Qué se envía: el texto del caption y del comentario, la imagen destacada (o su URL pública) y los tokens de acceso de los canales conectados.
-* Cuándo: al publicarse un post que cumpla las reglas configuradas, al ejecutar acciones manuales de publicación y en la revisión diaria de salud de los tokens.
-* No se envía ningún dato hasta que un administrador conecta un canal.
+* What is sent: the caption and comment text, the featured image (or its public URL) and the access token of the connected channel.
+* When: when a post that matches the configured rules is published, when an administrator triggers a manual publish or retry, and during the periodic token health check.
+* Nothing is sent until an administrator connects a channel.
 
-Servicio provisto por Meta Platforms, Inc.: [Términos de la plataforma](https://developers.facebook.com/terms/) · [Política de privacidad](https://www.facebook.com/privacy/policy/).
+This service is provided by Meta Platforms, Inc.: [Platform Terms](https://developers.facebook.com/terms/) and [Privacy Policy](https://www.facebook.com/privacy/policy/).
+
+The plugin sends no data to the plugin author, contains no analytics or telemetry, and makes no other external requests.
 
 == Installation ==
 
-1. Sube la carpeta `voceador` a `/wp-content/plugins/` o instala el ZIP desde Plugins → Añadir nuevo.
-2. Activa el plugin.
-3. Sigue el asistente de configuración para conectar tu app de Meta y tus canales.
+1. Upload the `voceador` folder to `/wp-content/plugins/`, or install the ZIP from Plugins → Add New.
+2. Activate the plugin.
+3. Create a Meta app with the Facebook Login product and generate a Page access token with the `pages_show_list`, `pages_read_engagement`, `pages_manage_posts` and `pages_manage_engagement` permissions.
+4. Connect the Page with WP-CLI: `wp voceador channels add-facebook --page-id=<id> --token-file=- --alias="My Page"`, passing the token through standard input so that it is not stored in the shell history.
+5. Publish a post with a featured image, or run `wp voceador publish <post_id>` to test it.
+
+A settings screen and a setup wizard will replace step 4 in a future version.
 
 == Frequently Asked Questions ==
 
-= ¿Necesito una app de Meta? =
+= Do I need my own Meta app? =
 
-Sí. Cada sitio se conecta con una app de Meta propia o compartida. La ayuda integrada explica cómo crearla paso a paso.
+Yes. Each site connects through a Meta app that you create, or one shared across your network of sites. No App Review is needed while the person connecting the Page is an administrator, developer or tester of the app.
 
-= ¿Funciona con cuentas personales de Instagram? =
+= Where are my access tokens stored? =
 
-No. Instagram solo permite publicar por API en cuentas profesionales (Business o Creator).
+Encrypted with libsodium in your own database. The encryption key is derived from `VOCEADOR_ENCRYPTION_KEY` if you define it in `wp-config.php`, otherwise from your site's authentication salts. Rotating those salts invalidates the stored tokens and you will have to reconnect the channels.
+
+= Does it publish posts that were already published before? =
+
+No. Voceador marks the first publication of each post and ignores later transitions, unless you enable republishing in the settings.
+
+= What happens if a publication fails? =
+
+Temporary errors and rate limits are retried automatically with backoff. Authentication and permission errors pause the channel and record a notice, because retrying them would not help. The comment is a separate step: if the photo is published and the comment fails, only the comment is retried.
+
+= Does it work with Instagram? =
+
+Not yet. Instagram support is on the roadmap and will require a professional (Business or Creator) account.
 
 == Changelog ==
 
 = 0.1.0 =
-* Versión inicial en desarrollo.
+* First development release: Facebook Pages with a manual access token, queue with retries, templates, routing rules, activity log and WP-CLI commands.

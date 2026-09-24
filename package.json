@@ -11,6 +11,8 @@
     "test:multisite": "wp-env run tests-cli --env-cwd=wp-content/plugins/voceador vendor/bin/phpunit -c tests/phpunit/multisite.xml",
     "lint": "wp-env run tests-cli --env-cwd=wp-content/plugins/voceador vendor/bin/phpcs",
     "lint:fix": "wp-env run tests-cli --env-cwd=wp-content/plugins/voceador vendor/bin/phpcbf",
+    "check:plugin": "bash bin/plugin-check.sh",
+    "i18n": "wp-env run cli wp i18n make-pot /var/www/html/wp-content/plugins/voceador /var/www/html/wp-content/plugins/voceador/languages/voceador.pot --slug=voceador --exclude=tests,docs,bin,build-zip,node_modules,vendor,.superpowers",
     "build:zip": "bash bin/build-zip.sh"
   },
   "devDependencies": {

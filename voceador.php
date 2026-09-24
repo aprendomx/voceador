@@ -4,7 +4,7 @@
  * Plugin URI:        https://github.com/aprendomx/voceador
  * Description:       Anuncia automáticamente cada nota nueva en tus Páginas de Facebook y cuentas de Instagram.
  * Version:           0.1.0
- * Requires at least: 6.4
+ * Requires at least: 6.5
  * Requires PHP:      8.1
  * Author:            Aprendo MX
  * License:           GPL-2.0-or-later

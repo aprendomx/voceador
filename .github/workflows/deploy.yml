@@ -1,0 +1,53 @@
+name: Publicar en WordPress.org
+
+# Se dispara al crear una etiqueta de versión, por ejemplo:
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# Sube el plugin al repositorio SVN de WordPress.org: el código a trunk/ y a
+# tags/<versión>, y el contenido de .wordpress-org/ (banner, icono y capturas)
+# a assets/. Qué archivos entran lo decide .distignore.
+#
+# Requiere dos secrets en el repositorio (Settings → Secrets and variables →
+# Actions): SVN_USERNAME y SVN_PASSWORD, que son las credenciales de la cuenta
+# de WordPress.org con permiso sobre el plugin. Mientras no existan, el paso de
+# despliegue se omite en lugar de fallar.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Desplegar a SVN
+    runs-on: ubuntu-latest
+    env:
+      # El contexto secrets no está disponible en el `if` de un job, solo en env.
+      HAS_SVN_CREDENTIALS: ${{ secrets.SVN_USERNAME != '' && secrets.SVN_PASSWORD != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Comprobar que la etiqueta coincide con la versión del plugin
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          header=$(grep -m1 '^ \* Version:' voceador.php | awk '{print $3}')
+          stable=$(grep -m1 '^Stable tag:' readme.txt | awk '{print $3}')
+          echo "etiqueta=$tag cabecera=$header stable_tag=$stable"
+          test "$tag" = "$header"
+          test "$tag" = "$stable"
+
+      - name: Aviso si faltan credenciales
+        if: env.HAS_SVN_CREDENTIALS != 'true'
+        run: |
+          echo "::warning::Sin SVN_USERNAME/SVN_PASSWORD no se despliega. Añádelos en Settings → Secrets and variables → Actions cuando WordPress.org apruebe el plugin."
+
+      - name: Desplegar
+        if: env.HAS_SVN_CREDENTIALS == 'true'
+        uses: 10up/action-wordpress-plugin-deploy@stable
+        env:
+          SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
+          SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
+          SLUG: voceador

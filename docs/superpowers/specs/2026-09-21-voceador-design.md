@@ -12,7 +12,7 @@ Fuente de requisitos: `docs/prompt-original.md` (prompt de desarrollo del plugin
 | Pruebas contra Graph API real | Staging público con HTTPS (microfono.mx, WordOps); en local solo mocks vía `pre_http_request` |
 | Distribución | Privada por ZIP/Git hoy; el repo se mantiene listo para enviarse a WordPress.org |
 | Almacenamiento | Tablas propias para canales, trabajos y log; opciones para ajustes; post meta solo para datos editoriales |
-| Stack | PHP 8.1+, WordPress 6.4+, single site y Multisite, sin Composer en runtime |
+| Stack | PHP 8.1+, WordPress 6.5+, single site y Multisite, sin Composer en runtime |
 
 ### Preparación para WordPress.org
 

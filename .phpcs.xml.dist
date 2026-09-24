@@ -12,7 +12,7 @@
 	<arg name="basepath" value="." />
 	<arg value="sp" />
 
-	<config name="minimum_wp_version" value="6.4" />
+	<config name="minimum_wp_version" value="6.5" />
 	<config name="testVersion" value="8.1-" />
 
 	<rule ref="WordPress">

@@ -1,0 +1,163 @@
+# Copyright (C) 2026 Aprendo MX
+# This file is distributed under the GPL-2.0-or-later.
+msgid ""
+msgstr ""
+"Project-Id-Version: Voceador – Autopublicación de notas en redes sociales 0.1.0\n"
+"Report-Msgid-Bugs-To: https://github.com/aprendomx/voceador/issues\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"POT-Creation-Date: 2026-09-24T22:06:24+00:00\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"X-Generator: WP-CLI 2.12.0\n"
+"X-Domain: voceador\n"
+
+#. Plugin Name of the plugin
+#: voceador.php
+msgid "Voceador – Autopublicación de notas en redes sociales"
+msgstr ""
+
+#. Plugin URI of the plugin
+#: voceador.php
+msgid "https://github.com/aprendomx/voceador"
+msgstr ""
+
+#. Description of the plugin
+#: voceador.php
+msgid "Anuncia automáticamente cada nota nueva en tus Páginas de Facebook y cuentas de Instagram."
+msgstr ""
+
+#. Author of the plugin
+#: voceador.php
+msgid "Aprendo MX"
+msgstr ""
+
+#. translators: %s: nombre del campo
+#: src/ChannelRepository.php:85
+#, php-format
+msgid "Falta el campo %s del canal."
+msgstr ""
+
+#: src/ChannelRepository.php:90
+msgid "Ese canal ya está conectado."
+msgstr ""
+
+#: src/ChannelRepository.php:115
+msgid "No se pudo guardar el canal."
+msgstr ""
+
+#: src/Channels/FacebookPageAdapter.php:60
+msgid "Página de Facebook"
+msgstr ""
+
+#: src/Channels/FacebookPageAdapter.php:81
+msgid "La respuesta de Graph no incluye un id de Página."
+msgstr ""
+
+#: src/Channels/FacebookPageAdapter.php:85
+msgid "El token pertenece a otra Página."
+msgstr ""
+
+#. translators: %s: tipo MIME
+#: src/Channels/FacebookPageAdapter.php:107
+#, php-format
+msgid "Facebook no acepta imágenes %s; convierte la imagen destacada a JPEG o PNG."
+msgstr ""
+
+#: src/Channels/FacebookPageAdapter.php:127
+msgid "La imagen destacada pesa más de lo que acepta Facebook en todos los tamaños disponibles."
+msgstr ""
+
+#: src/Channels/FacebookPageAdapter.php:181
+msgid "Graph no devolvió el id de la publicación."
+msgstr ""
+
+#: src/Channels/FacebookPageAdapter.php:245
+msgid "Tamaño de imagen"
+msgstr ""
+
+#: src/Channels/FacebookPageAdapter.php:249
+msgid "Modo de envío"
+msgstr ""
+
+#: src/Channels/FacebookPageAdapter.php:252
+msgid "Archivo (multipart)"
+msgstr ""
+
+#: src/Channels/FacebookPageAdapter.php:253
+msgid "URL pública"
+msgstr ""
+
+#: src/Channels/FacebookPageAdapter.php:257
+msgid "Sin imagen destacada"
+msgstr ""
+
+#: src/Channels/FacebookPageAdapter.php:260
+msgid "Omitir"
+msgstr ""
+
+#: src/Channels/FacebookPageAdapter.php:261
+msgid "Publicar como enlace"
+msgstr ""
+
+#: src/Crypto.php:217
+msgid "El valor cifrado no tiene un formato reconocido."
+msgstr ""
+
+#: src/Crypto.php:224
+msgid "El valor cifrado está truncado o dañado."
+msgstr ""
+
+#: src/Crypto.php:232
+msgid "No se pudo descifrar: la clave de cifrado del sitio cambió. Vuelve a conectar el canal."
+msgstr ""
+
+#: src/GraphClient.php:99
+msgid "No se pudo leer el archivo de imagen."
+msgstr ""
+
+#. translators: %d: código HTTP
+#: src/GraphClient.php:162
+#, php-format
+msgid "Respuesta HTTP %d de la Graph API."
+msgstr ""
+
+#: src/GraphClient.php:251
+msgid "La Graph API devolvió una respuesta que no es JSON."
+msgstr ""
+
+#. translators: 1: alias del canal, 2: mensaje de error
+#: src/Publisher.php:240
+#, php-format
+msgid "Voceador pausó el canal \"%1$s\": %2$s. Vuelve a conectarlo desde los ajustes."
+msgstr ""
+
+#: src/Publisher.php:310
+msgid "El canal no existe o está pausado."
+msgstr ""
+
+#: src/Publisher.php:339
+msgid "El post ya no está publicado."
+msgstr ""
+
+#: src/Publisher.php:361
+msgid "Se alcanzó el límite de publicaciones del canal."
+msgstr ""
+
+#: src/Publisher.php:373
+msgid "El post no tiene imagen destacada."
+msgstr ""
+
+#: src/Queue.php:112
+msgid "Voceador: WP-Cron está deshabilitado (DISABLE_WP_CRON) y no hay Action Scheduler. Configura un cron del sistema que llame a wp-cron.php o instala un plugin que provea Action Scheduler; si no, las publicaciones no se ejecutarán. Este aviso desaparece solo en cuanto ese cron del sistema se ejecute."
+msgstr ""
+
+#: src/Queue.php:198
+msgid "El proceso se interrumpió durante la publicación. Verifica en la red antes de reintentar."
+msgstr ""
+
+#: src/Queue.php:212
+msgid "El proceso se interrumpió durante el comentario."
+msgstr ""

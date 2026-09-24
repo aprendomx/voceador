@@ -11,7 +11,7 @@
 
 ## Requisitos
 
-PHP 8.1+, WordPress 6.4+ (single site o Multisite).
+PHP 8.1+, WordPress 6.5+ (single site o Multisite).
 
 ## Estructura del repositorio
 
@@ -68,6 +68,15 @@ En la suite de tests el `Trigger` global está desenganchado; los tests que lo n
 ## Cifrado de credenciales
 
 Los tokens de los canales se cifran con una clave derivada de `AUTH_KEY`/`SECURE_AUTH_KEY` (o de la constante `VOCEADOR_ENCRYPTION_KEY`, si se define; es la opción recomendada). Rotar esas salts invalida todos los canales conectados, que habrá que reconectar.
+
+## Publicar en WordPress.org
+
+El repositorio está preparado para enviarlo al directorio oficial: `readme.txt` en el formato requerido, `languages/voceador.pot`, Plugin Check en el CI y despliegue a SVN por etiqueta. Los pasos completos están en [docs/publicar-en-wordpress-org.md](docs/publicar-en-wordpress-org.md).
+
+```bash
+npm run check:plugin   # Plugin Check contra el paquete distribuible
+npm run i18n           # regenera languages/voceador.pot
+```
 
 ## Documentos legales
 
