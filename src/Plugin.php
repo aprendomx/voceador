@@ -25,6 +25,7 @@ final class Plugin {
 		Publisher::class,
 		Trigger::class,
 		OAuth\Facebook::class,
+		TokenManager::class,
 	);
 
 	/**
@@ -228,6 +229,10 @@ final class Plugin {
 				$c->get( Settings::class ),
 				$c->get( Logger::class )
 			);
+		};
+
+		$this->factories[ TokenManager::class ] = static function ( Plugin $c ): TokenManager {
+			return new TokenManager( $c->get( AppCredentials::class ), $c->get( GraphClient::class ), $c->get( ChannelRepository::class ), $c->get( Logger::class ) );
 		};
 	}
 

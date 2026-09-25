@@ -14,6 +14,7 @@ use Voceador\Crypto;
 use Voceador\GraphClient;
 use Voceador\Installer;
 use Voceador\Logger;
+use Voceador\Notices;
 use Voceador\Registrable;
 use Voceador\Settings;
 
@@ -379,6 +380,8 @@ final class Facebook implements Registrable {
 					$result['errors'][] = sprintf( /* translators: %s: alias del canal */ __( 'No se pudo actualizar el canal "%s".', 'voceador' ), $existing->alias );
 					continue;
 				}
+
+				Notices::remove( Notices::key_for_channel( $existing->id ) );
 
 				++$result['updated'];
 				$this->logger->info( 'channel_reconnected', 'Canal reconectado', array( 'channel_id' => $existing->id ) );

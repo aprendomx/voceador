@@ -236,7 +236,7 @@ final class Publisher implements Registrable {
 					)
 				);
 				self::add_notice(
-					'channel_paused_' . $channel->id,
+					Notices::key_for_channel( $channel->id ),
 					sprintf( /* translators: 1: alias del canal, 2: mensaje de error */ __( 'Voceador pausó el canal "%1$s": %2$s. Vuelve a conectarlo desde los ajustes.', 'voceador' ), $channel->alias, $message )
 				);
 				$status = 'failed';
@@ -270,20 +270,7 @@ final class Publisher implements Registrable {
 	 * @param string $message Texto.
 	 */
 	public static function add_notice( string $key, string $message ): void {
-		$option  = VOCEADOR_PREFIX . 'notices';
-		$notices = get_option( $option, array() );
-		$notices = is_array( $notices ) ? $notices : array();
-
-		$notices[ $key ] = array(
-			'message' => $message,
-			'time'    => time(),
-		);
-
-		if ( false === get_option( $option ) ) {
-			add_option( $option, $notices, '', false );
-			return;
-		}
-		update_option( $option, $notices, false );
+		Notices::add( $key, $message );
 	}
 
 	/**
