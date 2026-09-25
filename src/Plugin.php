@@ -24,6 +24,7 @@ final class Plugin {
 		Queue::class,
 		Publisher::class,
 		Trigger::class,
+		OAuth\Facebook::class,
 	);
 
 	/**
@@ -216,6 +217,17 @@ final class Plugin {
 
 		$this->factories[ CLI::class ] = static function ( Plugin $c ): CLI {
 			return new CLI( $c->get( ChannelRepository::class ), $c->get( Channels\ChannelRegistry::class ), $c->get( Publisher::class ), $c->get( JobRepository::class ), $c->get( Queue::class ), $c->get( Logger::class ) );
+		};
+
+		$this->factories[ OAuth\Facebook::class ] = static function ( Plugin $c ): OAuth\Facebook {
+			return new OAuth\Facebook(
+				$c->get( AppCredentials::class ),
+				$c->get( GraphClient::class ),
+				$c->get( ChannelRepository::class ),
+				$c->get( Crypto::class ),
+				$c->get( Settings::class ),
+				$c->get( Logger::class )
+			);
 		};
 	}
 
