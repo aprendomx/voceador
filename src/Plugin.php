@@ -147,6 +147,10 @@ final class Plugin {
 			return new Crypto();
 		};
 
+		$this->factories[ AppCredentials::class ] = static function ( Plugin $c ): AppCredentials {
+			return new AppCredentials( $c->get( Crypto::class ) );
+		};
+
 		$this->factories[ Settings::class ] = static function (): Settings {
 			return new Settings();
 		};

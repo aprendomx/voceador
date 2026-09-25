@@ -34,10 +34,16 @@ final class Logger {
 
 	/**
 	 * Patrones sensibles dentro de cadenas.
+	 *
+	 * Cubre los tres formatos de token de Meta: los de usuario y Página (EAA…),
+	 * los de Instagram (IGAA…/IGQ…) y los de app ({app-id}|{app-secret}), que
+	 * `debug_token` recibe como parámetro.
 	 */
 	private const SENSITIVE_IN_STRING = array(
-		'/((?:access_token|client_secret|app_secret|fb_exchange_token|code)=)[^&\s]+/i' => '$1[redactado]',
-		'/EAA[A-Za-z0-9]{20,}/' => '[redactado]',
+		'/((?:access_token|client_secret|app_secret|fb_exchange_token|input_token|code)=)[^&\s]+/i' => '$1[redactado]',
+		'/EAA[A-Za-z0-9]{20,}/'        => '[redactado]',
+		'/IG[A-Za-z0-9]{20,}/'         => '[redactado]',
+		'/\b\d{8,}\|[A-Za-z0-9]{20,}/' => '[redactado]',
 	);
 
 	/**

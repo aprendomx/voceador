@@ -155,6 +155,35 @@ class LoggerTest extends WP_UnitTestCase {
 		$this->assertSame( 'https://x/cb?code=[redactado]&state=s', $redacted['url'] );
 	}
 
+	public function test_redact_masks_app_and_instagram_tokens(): void {
+		$app_token = '1234567890123456|' . str_repeat( 'a1b2', 8 );
+		$ig_token  = 'IGAA' . str_repeat( 'Xy9', 12 );
+		$ig_legacy = 'IGQVJ' . str_repeat( 'Zz8', 12 );
+
+		$redacted = Logger::redact(
+			array(
+				'msg'  => 'app ' . $app_token . ' fin',
+				'ig'   => 'token ' . $ig_token,
+				'old'  => $ig_legacy,
+				'safe' => '12345|corto',
+			)
+		);
+
+		$this->assertSame( 'app [redactado] fin', $redacted['msg'] );
+		$this->assertSame( 'token [redactado]', $redacted['ig'] );
+		$this->assertSame( '[redactado]', $redacted['old'] );
+		$this->assertSame( '12345|corto', $redacted['safe'], 'Un pipe suelto no es un token de app.' );
+	}
+
+	public function test_redact_string_masks_app_token_in_a_url(): void {
+		$app_token = '1234567890123456|' . str_repeat( 'a1b2', 8 );
+
+		$this->assertSame(
+			'https://graph.facebook.com/v26.0/debug_token?access_token=[redactado]&input_token=[redactado]',
+			Logger::redact_string( 'https://graph.facebook.com/v26.0/debug_token?access_token=' . $app_token . '&input_token=EAA' . str_repeat( 'Ab1', 10 ) )
+		);
+	}
+
 	public function test_objects_in_context_are_normalized_and_redacted(): void {
 		$redacted = Logger::redact(
 			array(
