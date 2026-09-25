@@ -3,6 +3,7 @@
  * @package Voceador
  */
 
+use Voceador\AppCredentials;
 use Voceador\ChannelRepository;
 use Voceador\Channels\ChannelRegistry;
 use Voceador\Channels\FacebookPageAdapter;
@@ -17,6 +18,7 @@ use Voceador\Schema;
 use Voceador\Settings;
 use Voceador\Templates;
 use Voceador\Tests\Fixtures\GraphResponses;
+use Voceador\TokenManager;
 
 class CLITest extends WP_UnitTestCase {
 
@@ -37,7 +39,11 @@ class CLITest extends WP_UnitTestCase {
 		$registry       = new ChannelRegistry( array( 'facebook_page' => static fn() => new FacebookPageAdapter( $graph, $settings ) ) );
 		$queue          = new Queue( $jobs, $logger );
 		$publisher      = new Publisher( $jobs, $this->channels, $registry, new Templates( $settings ), $settings, $logger, $queue );
-		$this->cli      = new CLI( $this->channels, $registry, $publisher, $jobs, $queue, $logger );
+		$crypto         = new Crypto( str_repeat( 'k', SODIUM_CRYPTO_SECRETBOX_KEYBYTES ) );
+		$app            = new AppCredentials( $crypto );
+		$app->save( '111222333', 'secreto' );
+		$tokens    = new TokenManager( $app, $graph, $this->channels, $logger );
+		$this->cli = new CLI( $this->channels, $registry, $publisher, $jobs, $queue, $logger, $tokens, $app );
 
 		add_filter( 'pre_http_request', array( $this, 'respond' ), 10, 3 );
 	}
@@ -258,5 +264,49 @@ class CLITest extends WP_UnitTestCase {
 		$this->responses[] = GraphResponses::ok( array( 'id' => 'c1' ) );
 		$this->assertSame( array( $id => 'done' ), $this->cli->retry( $post_id, null, true, false ) );
 		$this->assertSame( 'done', $jobs->find( $job_id )->comment_status );
+	}
+
+	public function test_status_reports_the_app(): void {
+		$status = $this->cli->status();
+
+		// set_up() configura la app (necesario para test_check_channels_reports_without_pausing,
+		// que necesita que TokenManager::check() llegue a consultar Graph); por eso aquí se
+		// afirma "configurada", a diferencia del smoke local con el plugin recién activado.
+		$this->assertTrue( $status['app']['configured'] );
+		$this->assertSame( '111222333', $status['app']['app_id'] );
+		$this->assertStringContainsString( 'action=voceador_oauth_fb', $status['app']['redirect_uri'] );
+	}
+
+	public function test_check_channels_reports_without_pausing(): void {
+		$this->responses[] = GraphResponses::ok(
+			array(
+				'id'   => '1001',
+				'name' => 'Mi Página',
+			)
+		);
+		$id                = $this->cli->add_facebook_page( '1001', 'EAAtoken' );
+
+		$this->responses[] = GraphResponses::ok(
+			array(
+				'data' => array(
+					'app_id'     => '111222333',
+					'is_valid'   => false,
+					'profile_id' => '1001',
+					'expires_at' => 0,
+					'scopes'     => array(),
+				),
+			)
+		);
+
+		$rows = $this->cli->check_channels( $id );
+
+		$this->assertCount( 1, $rows );
+		$this->assertSame( $id, $rows[0]['channel'] );
+		$this->assertFalse( $rows[0]['valid'] );
+		$this->assertSame( 'active', $this->channels->find( $id )->status, 'Informar no pausa.' );
+	}
+
+	public function test_check_channels_of_a_missing_channel_is_empty(): void {
+		$this->assertSame( array(), $this->cli->check_channels( 999999 ) );
 	}
 }

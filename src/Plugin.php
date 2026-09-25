@@ -218,7 +218,7 @@ final class Plugin {
 		};
 
 		$this->factories[ CLI::class ] = static function ( Plugin $c ): CLI {
-			return new CLI( $c->get( ChannelRepository::class ), $c->get( Channels\ChannelRegistry::class ), $c->get( Publisher::class ), $c->get( JobRepository::class ), $c->get( Queue::class ), $c->get( Logger::class ) );
+			return new CLI( $c->get( ChannelRepository::class ), $c->get( Channels\ChannelRegistry::class ), $c->get( Publisher::class ), $c->get( JobRepository::class ), $c->get( Queue::class ), $c->get( Logger::class ), $c->get( TokenManager::class ), $c->get( AppCredentials::class ) );
 		};
 
 		$this->factories[ OAuth\Facebook::class ] = static function ( Plugin $c ): OAuth\Facebook {

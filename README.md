@@ -2,7 +2,7 @@
 
 **Voceador – Autopublicación de notas en redes sociales** es un plugin de WordPress que anuncia automáticamente en Páginas de Facebook y cuentas de Instagram cada nota que se publica por primera vez en un sitio de noticias.
 
-> Estado: fase 1b completada: publica en Páginas de Facebook con token manual (foto + comentario), con cola, reintentos y WP-CLI. Verificado en staging el 2026-09-23 (la foto; el comentario queda pendiente de que la app de Meta tenga `pages_manage_engagement`). Falta OAuth, Instagram, editor, wizard y ajustes.
+> Estado: fase 2 completada: conexión con Facebook por OAuth desde el escritorio, credenciales cifradas y revisión diaria de la salud de los tokens con avisos. Falta Instagram, panel del editor, wizard y ajustes completos.
 
 ## Documentación
 
@@ -44,6 +44,7 @@ Con el plugin activo, `wp voceador` expone estos comandos:
 wp voceador channels add-facebook --page-id=<id> [--token=<page-token>] [--token-file=<ruta|->] [--alias=<alias>]
 wp voceador channels list [--format=<table|json|csv>]
 wp voceador channels delete <id>
+wp voceador channels check [<id>] [--all]
 wp voceador publish <post_id> [--channel=<id>] [--source=<source>] [--force]
 wp voceador retry <post_id> [--channel=<id>] [--comment] [--force]
 wp voceador status
@@ -57,7 +58,9 @@ printf '%s' "$TOKEN" | wp voceador channels add-facebook --page-id=<id> --token-
 
 `--token-file=<ruta>` lee el token de un archivo; `--token` (menos recomendable) lo acepta en la propia línea de comandos.
 
-`publish` reintenta un post en los canales activos (o en uno concreto con `--channel`) y sale con código 1 si algún canal queda en `failed`; `--force` reintenta también trabajos marcados como no verificados (`unverified`). `retry` reintenta los trabajos ya existentes de un post que estén en `failed`, `skipped` o `rate_limited` (o, con `--comment`, el comentario de un trabajo ya publicado); acepta `--channel` y `--force` igual que `publish`. `status` resume canales por estado, trabajos por estado, si hay Action Scheduler o cron disponible, y los últimos eventos del log.
+`channels check [<id>]` revisa la salud del token de un canal o de todos, sin pausar nada: es solo informativo. Con `--all` ejecuta la misma revisión completa que el cron diario (`TokenManager::check_all()`), que sí pausa los canales cuyo token ya no sirve y añade el aviso correspondiente.
+
+`publish` reintenta un post en los canales activos (o en uno concreto con `--channel`) y sale con código 1 si algún canal queda en `failed`; `--force` reintenta también trabajos marcados como no verificados (`unverified`). `retry` reintenta los trabajos ya existentes de un post que estén en `failed`, `skipped` o `rate_limited` (o, con `--comment`, el comentario de un trabajo ya publicado); acepta `--channel` y `--force` igual que `publish`. `status` resume canales por estado, trabajos por estado, si hay Action Scheduler o cron disponible, si la app de Meta está configurada (con su redirect URI) y los últimos eventos del log.
 
 `npm run build:zip` genera el ZIP distribuible en `build-zip/`.
 

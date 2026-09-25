@@ -4,7 +4,7 @@ Tags: social media, autoposting, facebook, news, publishing
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.1.0
+Stable tag: 0.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -21,19 +21,21 @@ When a post is published, Voceador queues one job per connected channel and, for
 
 **What is included in this version**
 
-* Connect one or more Facebook Pages using a Page access token.
+* Connect one or more Facebook Pages using a Page access token, or with Facebook Login (OAuth) instead of manual tokens, plus token health monitoring.
+* Connect your Pages from the WordPress dashboard with a "Connect with Facebook" button; no tokens to copy by hand.
+* A daily health check that pauses a channel and shows a notice when its token stops working.
 * Caption and comment templates with placeholders: `{title}`, `{excerpt}`, `{permalink}`, `{shortlink}`, `{site_name}`, `{author}`, `{category}`, `{categories}`, `{date}` and `{social_message}` with a configurable fallback chain.
 * Routing rules per channel by post type, plus per-post overrides through post meta.
 * A queue that uses Action Scheduler when another plugin provides it and falls back to WP-Cron, with delays, retries and exponential backoff.
 * Error handling per class: temporary errors are retried, rate limits are rescheduled, and authentication or permission errors pause the channel instead of retrying.
 * An activity log in its own table that never records tokens or secrets.
-* Access tokens encrypted at rest with libsodium.
-* WP-CLI commands: `wp voceador channels add-facebook`, `channels list`, `channels delete`, `publish`, `retry` and `status`.
+* Access tokens and app credentials encrypted at rest with libsodium.
+* WP-CLI commands: `wp voceador channels add-facebook`, `channels list`, `channels delete`, `channels check`, `publish`, `retry` and `status`.
 * Works on single sites and on Multisite, with per-site configuration.
 
 **On the roadmap**
 
-Facebook Login (OAuth) instead of manual tokens, token health monitoring, a settings screen, an editor panel for the newsroom, Instagram support with image processing and a link-in-bio page, an onboarding wizard and email notifications.
+A settings screen for App ID and App Secret, an editor panel for the newsroom, Instagram support with image processing and a link-in-bio page, an onboarding wizard and email notifications.
 
 **Requirements**
 
@@ -57,11 +59,12 @@ The plugin sends no data to the plugin author, contains no analytics or telemetr
 
 1. Upload the `voceador` folder to `/wp-content/plugins/`, or install the ZIP from Plugins → Add New.
 2. Activate the plugin.
-3. Create a Meta app with the Facebook Login product and generate a Page access token with the `pages_show_list`, `pages_read_engagement`, `pages_manage_posts` and `pages_manage_engagement` permissions.
-4. Connect the Page with WP-CLI: `wp voceador channels add-facebook --page-id=<id> --token-file=- --alias="My Page"`, passing the token through standard input so that it is not stored in the shell history.
-5. Publish a post with a featured image, or run `wp voceador publish <post_id>` to test it.
+3. Create a Meta app with the Facebook Login product and register the redirect URI shown on Voceador → Connections as a valid OAuth redirect URI.
+4. Enter the App ID and App Secret on Voceador → Connections.
+5. Click "Connect with Facebook", sign in and choose the Pages you want to connect.
+6. Publish a post with a featured image, or run `wp voceador publish <post_id>` to test it.
 
-A settings screen and a setup wizard will replace step 4 in a future version.
+A setup wizard will simplify this flow in a future version. Advanced users can still connect a Page manually with a Page access token: `wp voceador channels add-facebook --page-id=<id> --token-file=- --alias="My Page"`.
 
 == Frequently Asked Questions ==
 
@@ -86,6 +89,13 @@ Temporary errors and rate limits are retried automatically with backoff. Authent
 Not yet. Instagram support is on the roadmap and will require a professional (Business or Creator) account.
 
 == Changelog ==
+
+= 0.2.0 =
+* Connect Facebook Pages with Facebook Login (OAuth) from the WordPress dashboard, no tokens to copy by hand; manual Page access tokens via WP-CLI are still supported.
+* App ID and App Secret are stored encrypted with libsodium.
+* A daily health check calls Facebook's `debug_token`, pauses a channel and shows an admin notice when its token stops working or is missing permissions.
+* New WP-CLI command `wp voceador channels check [<id>] [--all]` to inspect (or, with `--all`, run the same check the daily cron runs) a channel's token health.
+* `wp voceador status` now reports whether the Meta app is configured and its OAuth redirect URI.
 
 = 0.1.0 =
 * First development release: Facebook Pages with a manual access token, queue with retries, templates, routing rules, activity log and WP-CLI commands.
