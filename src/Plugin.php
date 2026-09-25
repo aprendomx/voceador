@@ -237,7 +237,7 @@ final class Plugin {
 		};
 
 		$this->factories[ Admin\ConnectionsPage::class ] = static function ( Plugin $c ): Admin\ConnectionsPage {
-			return new Admin\ConnectionsPage( $c->get( AppCredentials::class ), $c->get( OAuth\Facebook::class ), $c->get( ChannelRepository::class ), $c->get( TokenManager::class ) );
+			return new Admin\ConnectionsPage( $c->get( AppCredentials::class ), $c->get( OAuth\Facebook::class ), $c->get( ChannelRepository::class ), $c->get( TokenManager::class ), $c->get( Channels\ChannelRegistry::class ) );
 		};
 	}
 

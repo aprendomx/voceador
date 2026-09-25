@@ -9,6 +9,7 @@ namespace Voceador\Admin;
 
 use Voceador\AppCredentials;
 use Voceador\ChannelRepository;
+use Voceador\Channels\ChannelRegistry;
 use Voceador\Installer;
 use Voceador\Notices;
 use Voceador\OAuth\Facebook;
@@ -43,12 +44,14 @@ final class ConnectionsPage implements Registrable {
 	 * @param Facebook          $oauth    Conexión con Facebook.
 	 * @param ChannelRepository $channels Canales.
 	 * @param TokenManager      $tokens   Salud de los tokens.
+	 * @param ChannelRegistry   $registry Tipos de canal.
 	 */
 	public function __construct(
 		private AppCredentials $app,
 		private Facebook $oauth,
 		private ChannelRepository $channels,
-		private TokenManager $tokens
+		private TokenManager $tokens,
+		private ChannelRegistry $registry
 	) {}
 
 	/**
@@ -210,7 +213,7 @@ final class ConnectionsPage implements Registrable {
 		$channel_id = isset( $_GET['channel'] ) ? absint( wp_unslash( $_GET['channel'] ) ) : 0;
 		$notice_key = isset( $_GET['notice'] ) ? sanitize_text_field( wp_unslash( $_GET['notice'] ) ) : '';
 
-		check_admin_referer( self::ACTION_CHANNEL . '_' . $action . '_' . $channel_id . $notice_key );
+		check_admin_referer( self::ACTION_CHANNEL . '_' . $action . '_' . $channel_id . '|' . $notice_key );
 
 		$result   = $this->run_channel_action( $action, $channel_id, $notice_key );
 		$messages = array(
@@ -245,7 +248,8 @@ final class ConnectionsPage implements Registrable {
 	private function render_app_form(): void {
 		echo '<h2>' . esc_html__( 'App de Meta', 'voceador' ) . '</h2>';
 		echo '<p>' . esc_html__( 'Registra esta URI de redirección en tu app (Facebook Login → Settings → Valid OAuth Redirect URIs):', 'voceador' ) . '</p>';
-		echo '<p><input type="text" class="large-text code" readonly value="' . esc_attr( $this->oauth->redirect_uri() ) . '" onfocus="this.select()" /></p>';
+		echo '<p><input type="text" class="large-text code" readonly value="' . esc_attr( $this->oauth->redirect_uri() ) . '" onfocus="this.select()" />';
+		echo ' <button type="button" class="button" onclick="navigator.clipboard.writeText(this.previousElementSibling.value);this.textContent=' . esc_attr( wp_json_encode( __( '¡Copiada!', 'voceador' ) ) ) . ';">' . esc_html__( 'Copiar', 'voceador' ) . '</button></p>';
 
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 		wp_nonce_field( self::ACTION_SAVE_APP );
@@ -317,20 +321,43 @@ final class ConnectionsPage implements Registrable {
 			return;
 		}
 
+		$labels = $this->registry->types();
+
 		echo '<table class="widefat striped"><thead><tr>';
-		echo '<th>' . esc_html__( 'Alias', 'voceador' ) . '</th><th>' . esc_html__( 'Página', 'voceador' ) . '</th><th>' . esc_html__( 'Estado', 'voceador' ) . '</th>';
+		echo '<th>' . esc_html__( 'Alias', 'voceador' ) . '</th><th>' . esc_html__( 'Tipo', 'voceador' ) . '</th><th>' . esc_html__( 'Página', 'voceador' ) . '</th><th>' . esc_html__( 'Estado', 'voceador' ) . '</th>';
 		echo '<th>' . esc_html__( 'Última revisión', 'voceador' ) . '</th><th>' . esc_html__( 'Acciones', 'voceador' ) . '</th>';
 		echo '</tr></thead><tbody>';
 
 		foreach ( $channels as $channel ) {
-			$health = isset( $channel->health['message'] ) ? (string) $channel->health['message'] : '';
+			$health         = isset( $channel->health['message'] ) ? (string) $channel->health['message'] : '';
+			$scopes         = isset( $channel->health['scopes'] ) ? (array) $channel->health['scopes'] : array();
+			$missing_scopes = isset( $channel->health['missing_scopes'] ) ? (array) $channel->health['missing_scopes'] : array();
 
 			echo '<tr>';
 			echo '<td>' . esc_html( $channel->alias ) . '</td>';
+			echo '<td>' . esc_html( $labels[ $channel->type ] ?? $channel->type ) . '</td>';
 			echo '<td>' . esc_html( $channel->remote_name ) . '<br /><code>' . esc_html( $channel->remote_id ) . '</code></td>';
 			echo '<td>' . esc_html( $channel->status );
 			if ( '' !== $health ) {
 				echo '<br /><span class="description">' . esc_html( $health ) . '</span>';
+			}
+			if ( $scopes ) {
+				echo '<br /><span class="description">' . esc_html(
+					sprintf(
+						/* translators: %s: lista de permisos */
+						__( 'Permisos: %s', 'voceador' ),
+						implode( ', ', $scopes )
+					)
+				) . '</span>';
+			}
+			if ( $missing_scopes ) {
+				echo '<br /><strong>' . esc_html(
+					sprintf(
+						/* translators: %s: lista de permisos */
+						__( 'Faltan: %s', 'voceador' ),
+						implode( ', ', $missing_scopes )
+					)
+				) . '</strong>';
 			}
 			echo '</td>';
 			$expires = isset( $channel->health['expires_at'] ) ? (string) $channel->health['expires_at'] : '';
@@ -368,7 +395,7 @@ final class ConnectionsPage implements Registrable {
 			admin_url( 'admin-post.php' )
 		);
 
-		return wp_nonce_url( $url, self::ACTION_CHANNEL . '_' . $action . '_' . $channel_id . $notice_key );
+		return wp_nonce_url( $url, self::ACTION_CHANNEL . '_' . $action . '_' . $channel_id . '|' . $notice_key );
 	}
 
 	/**

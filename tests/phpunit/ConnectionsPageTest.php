@@ -6,6 +6,8 @@
 use Voceador\Admin\ConnectionsPage;
 use Voceador\AppCredentials;
 use Voceador\ChannelRepository;
+use Voceador\Channels\ChannelRegistry;
+use Voceador\Channels\FacebookPageAdapter;
 use Voceador\Crypto;
 use Voceador\GraphClient;
 use Voceador\Installer;
@@ -37,7 +39,8 @@ class ConnectionsPageTest extends WP_UnitTestCase {
 		$this->app      = new AppCredentials( $crypto );
 		$this->channels = new ChannelRepository( $wpdb, $schema, $crypto );
 		$this->oauth    = new Facebook( $this->app, $graph, $this->channels, $crypto, $settings, $logger );
-		$this->page     = new ConnectionsPage( $this->app, $this->oauth, $this->channels, new TokenManager( $this->app, $graph, $this->channels, $logger ) );
+		$registry       = new ChannelRegistry( array( 'facebook_page' => static fn() => new FacebookPageAdapter( $graph, $settings ) ) );
+		$this->page     = new ConnectionsPage( $this->app, $this->oauth, $this->channels, new TokenManager( $this->app, $graph, $this->channels, $logger ), $registry );
 
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		get_role( 'administrator' )->add_cap( Installer::CAPABILITY );
@@ -93,8 +96,10 @@ class ConnectionsPageTest extends WP_UnitTestCase {
 				'remote_id'   => '1001',
 				'credentials' => array( 'access_token' => 'T' ),
 				'health'      => array(
-					'message'    => 'Token válido.',
-					'expires_at' => '2026-12-31 00:00:00',
+					'message'        => 'Token válido.',
+					'expires_at'     => '2026-12-31 00:00:00',
+					'scopes'         => array( 'pages_show_list', 'pages_manage_posts' ),
+					'missing_scopes' => array( 'pages_read_engagement' ),
 				),
 			)
 		);
@@ -104,6 +109,40 @@ class ConnectionsPageTest extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'Reconectar', $html );
 		$this->assertStringContainsString( '2026-12-31 00:00:00', $html );
 		$this->assertStringContainsString( (string) $id, $html );
+		$this->assertStringContainsString( 'Página de Facebook', $html, 'Muestra la etiqueta del tipo de canal.' );
+		$this->assertStringContainsString( 'Permisos: pages_show_list, pages_manage_posts', $html );
+		$this->assertStringContainsString( 'Faltan: pages_read_engagement', $html );
+	}
+
+	public function test_channel_row_with_no_health_shows_neither_permissions_line(): void {
+		$this->app->save( '111222333', 'secreto' );
+		$this->channels->insert(
+			array(
+				'type'        => 'facebook_page',
+				'alias'       => 'Recién conectada',
+				'remote_id'   => '2002',
+				'credentials' => array( 'access_token' => 'T' ),
+			)
+		);
+
+		$html = $this->render();
+
+		$this->assertStringContainsString( '—', $html, 'Sin revisión aún, se imprime el guion.' );
+		$this->assertStringNotContainsString( 'Permisos:', $html );
+		$this->assertStringNotContainsString( 'Faltan:', $html );
+	}
+
+	public function test_channel_action_nonces_are_unambiguous(): void {
+		$this->assertNotSame(
+			wp_create_nonce( ConnectionsPage::ACTION_CHANNEL . '_check_1|23' ),
+			wp_create_nonce( ConnectionsPage::ACTION_CHANNEL . '_check_12|3' )
+		);
+	}
+
+	public function test_redirect_uri_field_has_a_copy_button(): void {
+		$html = $this->render();
+
+		$this->assertStringContainsString( 'navigator.clipboard.writeText', $html );
 	}
 
 	public function test_render_never_prints_the_secret_or_a_token(): void {
