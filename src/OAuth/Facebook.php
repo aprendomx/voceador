@@ -262,6 +262,30 @@ final class Facebook implements Registrable {
 	}
 
 	/**
+	 * Permisos que el usuario concedió realmente a la app.
+	 *
+	 * @param string $user_token Token de usuario.
+	 * @return string[] Nombres de los permisos con status "granted"; array() si Graph falla.
+	 */
+	public function permissions( string $user_token ): array {
+		$response = $this->graph->get( 'me/permissions', array(), $user_token );
+
+		if ( is_wp_error( $response ) ) {
+			return array();
+		}
+
+		$granted = array();
+
+		foreach ( (array) ( $response['data'] ?? array() ) as $row ) {
+			if ( 'granted' === ( $row['status'] ?? '' ) ) {
+				$granted[] = (string) ( $row['permission'] ?? '' );
+			}
+		}
+
+		return array_values( array_filter( $granted, static fn( string $name ): bool => '' !== $name ) );
+	}
+
+	/**
 	 * Guarda cifradas las Páginas candidatas del usuario actual.
 	 *
 	 * @param array $pages Lista de Páginas.
@@ -327,25 +351,35 @@ final class Facebook implements Registrable {
 			}
 
 			$page  = $candidates[ $page_id ];
-			$alias = trim( (string) $alias );
-			$alias = '' !== $alias ? $alias : (string) $page['name'];
+			$tasks = array_values( (array) ( $page['tasks'] ?? array() ) );
+
+			if ( $tasks && ! in_array( 'CREATE_CONTENT', $tasks, true ) ) {
+				$result['errors'][] = sprintf( /* translators: %s: nombre de la Página */ __( 'La Página "%s" no te permite crear contenido, así que no se puede conectar.', 'voceador' ), (string) $page['name'] );
+				continue;
+			}
+
+			$existing        = $this->channels->find_by_remote( FacebookPageAdapter::type(), $page_id );
+			$submitted_alias = trim( (string) $alias );
+			// Un alias en blanco conserva el alias existente al reconectar; solo cae al
+			// nombre de la Página cuando el canal es nuevo.
+			$fallback_alias = null !== $existing ? $existing->alias : (string) $page['name'];
 
 			$data = array(
-				'alias'             => $alias,
+				'alias'             => '' !== $submitted_alias ? $submitted_alias : $fallback_alias,
 				'remote_name'       => (string) $page['name'],
 				'avatar_url'        => (string) ( $page['picture'] ?? '' ),
 				'connection_method' => 'oauth',
 				'credentials'       => array( 'access_token' => (string) $page['access_token'] ),
-				'scopes'            => $this->scopes(),
+				'scopes'            => array_values( (array) ( $page['granted_scopes'] ?? array() ) ),
 				'status'            => 'active',
-				'health'            => array( 'message' => (string) $page['name'] ),
-				'health_checked_at' => current_time( 'mysql', true ),
 			);
 
-			$existing = $this->channels->find_by_remote( FacebookPageAdapter::type(), $page_id );
-
 			if ( null !== $existing ) {
-				$this->channels->update( $existing->id, $data );
+				if ( ! $this->channels->update( $existing->id, $data ) ) {
+					$result['errors'][] = sprintf( /* translators: %s: alias del canal */ __( 'No se pudo actualizar el canal "%s".', 'voceador' ), $existing->alias );
+					continue;
+				}
+
 				++$result['updated'];
 				$this->logger->info( 'channel_reconnected', 'Canal reconectado', array( 'channel_id' => $existing->id ) );
 				continue;
@@ -433,6 +467,12 @@ final class Facebook implements Registrable {
 			$this->back( '', __( 'Tu cuenta no administra ninguna Página. Si las Páginas están en un Business Manager, activa esa casilla y vuelve a conectar.', 'voceador' ) );
 		}
 
+		$granted = $this->permissions( $long );
+		foreach ( $pages as &$page ) {
+			$page['granted_scopes'] = $granted;
+		}
+		unset( $page );
+
 		$this->store_candidates( $pages );
 		$this->back( __( 'Elige las Páginas que quieres conectar.', 'voceador' ), '', array( 'voceador_step' => 'pages' ) );
 	}
@@ -448,6 +488,10 @@ final class Facebook implements Registrable {
 		$raw       = isset( $_POST['pages'] ) ? wp_unslash( $_POST['pages'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Cada elemento se sanea justo debajo.
 
 		foreach ( (array) $raw as $page_id => $alias ) {
+			if ( ! is_scalar( $alias ) ) {
+				continue;
+			}
+
 			$selection[ sanitize_text_field( (string) $page_id ) ] = sanitize_text_field( (string) $alias );
 		}
 
@@ -488,7 +532,7 @@ final class Facebook implements Registrable {
 	 * @param string $error   Mensaje de error.
 	 * @param array  $extra   Parámetros adicionales de la URL.
 	 */
-	private function back( string $message = '', string $error = '', array $extra = array() ): void {
+	private function back( string $message = '', string $error = '', array $extra = array() ): never {
 		$args = $extra;
 
 		if ( '' !== $message ) {
@@ -507,7 +551,7 @@ final class Facebook implements Registrable {
 	 *
 	 * @param \WP_Error $error Error normalizado.
 	 */
-	private function fail( \WP_Error $error ): void {
+	private function fail( \WP_Error $error ): never {
 		$message = Logger::redact_string( $error->get_error_message() );
 		$data    = (array) $error->get_error_data();
 

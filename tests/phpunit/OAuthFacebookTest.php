@@ -168,6 +168,34 @@ class OAuthFacebookTest extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'after=CURSOR', $this->requests[1]['url'] );
 	}
 
+	public function test_permissions_returns_only_granted(): void {
+		$this->responses[] = GraphResponses::ok(
+			array(
+				'data' => array(
+					array(
+						'permission' => 'pages_show_list',
+						'status'     => 'granted',
+					),
+					array(
+						'permission' => 'pages_manage_posts',
+						'status'     => 'declined',
+					),
+					array(
+						'permission' => 'pages_read_engagement',
+						'status'     => 'granted',
+					),
+				),
+			)
+		);
+
+		$this->assertSame( array( 'pages_show_list', 'pages_read_engagement' ), $this->oauth->permissions( 'LARGO' ) );
+		$this->assertStringContainsString( '/me/permissions', $this->requests[0]['url'] );
+		$this->assertSame( 'Bearer LARGO', $this->requests[0]['args']['headers']['Authorization'] );
+
+		$this->responses[] = GraphResponses::error( 400, 190, 'Invalid OAuth access token' );
+		$this->assertSame( array(), $this->oauth->permissions( 'LARGO' ), 'Un error de Graph no debe romper la conexión.' );
+	}
+
 	public function test_candidates_are_stored_encrypted(): void {
 		$user = self::factory()->user->create( array( 'role' => 'administrator' ) );
 		wp_set_current_user( $user );
@@ -196,11 +224,12 @@ class OAuthFacebookTest extends WP_UnitTestCase {
 		$this->oauth->store_candidates(
 			array(
 				array(
-					'id'           => '1001',
-					'name'         => 'Una',
-					'access_token' => 'T1',
-					'tasks'        => array( 'CREATE_CONTENT' ),
-					'picture'      => 'https://x/a.jpg',
+					'id'             => '1001',
+					'name'           => 'Una',
+					'access_token'   => 'T1',
+					'tasks'          => array( 'CREATE_CONTENT' ),
+					'picture'        => 'https://x/a.jpg',
+					'granted_scopes' => array( 'pages_show_list', 'pages_manage_posts' ),
 				),
 				array(
 					'id'           => '1002',
@@ -221,8 +250,10 @@ class OAuthFacebookTest extends WP_UnitTestCase {
 		$this->assertSame( 'oauth', $channel->connection_method );
 		$this->assertSame( 'T1', $channel->credential( 'access_token' ) );
 		$this->assertSame( 'https://x/a.jpg', $channel->avatar_url );
-		$this->assertContains( 'pages_manage_posts', $channel->scopes );
+		$this->assertSame( array( 'pages_show_list', 'pages_manage_posts' ), $channel->scopes );
 		$this->assertSame( 'active', $channel->status );
+		$this->assertSame( array(), $channel->health, 'No se inventa salud al conectar.' );
+		$this->assertNull( $channel->health_checked_at );
 
 		$this->oauth->store_candidates(
 			array(
@@ -233,7 +264,7 @@ class OAuthFacebookTest extends WP_UnitTestCase {
 				),
 			)
 		);
-		$result = $this->oauth->connect( array( '1001' => 'Principal' ) );
+		$result = $this->oauth->connect( array( '1001' => '   ' ) );
 
 		$this->assertSame( 0, $result['connected'] );
 		$this->assertSame( 1, $result['updated'] );
@@ -241,6 +272,27 @@ class OAuthFacebookTest extends WP_UnitTestCase {
 		$this->assertSame( 'T1-NUEVO', $channel->credential( 'access_token' ) );
 		$this->assertSame( 'Una renombrada', $channel->remote_name );
 		$this->assertSame( 'active', $channel->status, 'Reconectar reactiva el canal.' );
+		$this->assertSame( 'Principal', $channel->alias, 'Un alias en blanco conserva el alias existente.' );
+	}
+
+	public function test_connect_rejects_pages_without_create_content(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		$this->oauth->store_candidates(
+			array(
+				array(
+					'id'           => '1001',
+					'name'         => 'Una',
+					'access_token' => 'T1',
+					'tasks'        => array( 'ANALYZE' ),
+				),
+			)
+		);
+
+		$result = $this->oauth->connect( array( '1001' => 'Principal' ) );
+
+		$this->assertSame( 0, $result['connected'] );
+		$this->assertNotEmpty( $result['errors'] );
+		$this->assertNull( $this->channels->find_by_remote( 'facebook_page', '1001' ) );
 	}
 
 	public function test_connect_ignores_pages_outside_the_candidates(): void {
