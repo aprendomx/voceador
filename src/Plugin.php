@@ -26,6 +26,7 @@ final class Plugin {
 		Trigger::class,
 		OAuth\Facebook::class,
 		TokenManager::class,
+		Admin\ConnectionsPage::class,
 	);
 
 	/**
@@ -233,6 +234,10 @@ final class Plugin {
 
 		$this->factories[ TokenManager::class ] = static function ( Plugin $c ): TokenManager {
 			return new TokenManager( $c->get( AppCredentials::class ), $c->get( GraphClient::class ), $c->get( ChannelRepository::class ), $c->get( Logger::class ) );
+		};
+
+		$this->factories[ Admin\ConnectionsPage::class ] = static function ( Plugin $c ): Admin\ConnectionsPage {
+			return new Admin\ConnectionsPage( $c->get( AppCredentials::class ), $c->get( OAuth\Facebook::class ), $c->get( ChannelRepository::class ), $c->get( TokenManager::class ) );
 		};
 	}
 

@@ -487,6 +487,8 @@ final class Facebook implements Registrable {
 		$this->authorize();
 		check_admin_referer( self::ACTION_CONNECT );
 
+		$checked = isset( $_POST['connect'] ) ? array_map( 'sanitize_text_field', (array) wp_unslash( $_POST['connect'] ) ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Cada elemento se sanea con sanitize_text_field() en el propio array_map().
+
 		$selection = array();
 		$raw       = isset( $_POST['pages'] ) ? wp_unslash( $_POST['pages'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Cada elemento se sanea justo debajo.
 
@@ -495,7 +497,13 @@ final class Facebook implements Registrable {
 				continue;
 			}
 
-			$selection[ sanitize_text_field( (string) $page_id ) ] = sanitize_text_field( (string) $alias );
+			$page_id = sanitize_text_field( (string) $page_id );
+
+			if ( ! in_array( $page_id, $checked, true ) ) {
+				continue;
+			}
+
+			$selection[ $page_id ] = sanitize_text_field( (string) $alias );
 		}
 
 		if ( ! $selection ) {

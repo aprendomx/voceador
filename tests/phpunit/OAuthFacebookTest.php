@@ -331,6 +331,33 @@ class OAuthFacebookTest extends WP_UnitTestCase {
 		$this->assertSame( 'Una', $this->channels->find_by_remote( 'facebook_page', '1001' )->alias );
 	}
 
+	public function test_handle_connect_only_uses_checked_pages(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		$this->oauth->store_candidates(
+			array(
+				array(
+					'id'           => '1001',
+					'name'         => 'Marcada',
+					'access_token' => 'T1',
+				),
+				array(
+					'id'           => '1002',
+					'name'         => 'Sin marcar',
+					'access_token' => 'T2',
+				),
+			)
+		);
+
+		// El formulario envía pages[] con el alias de cada fila pero connect[] solo con las
+		// marcadas; handle_connect() filtra por lo marcado antes de construir la selección
+		// que llega aquí, así que una Página con alias pero sin marcar no debe darse de alta.
+		$result = $this->oauth->connect( array( '1001' => 'Marcada' ) );
+
+		$this->assertSame( 1, $result['connected'] );
+		$this->assertNotNull( $this->channels->find_by_remote( 'facebook_page', '1001' ) );
+		$this->assertNull( $this->channels->find_by_remote( 'facebook_page', '1002' ), 'Una Página sin marcar no se conecta.' );
+	}
+
 	public function test_hooks_are_registered(): void {
 		$this->oauth->register_hooks();
 
