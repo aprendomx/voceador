@@ -76,11 +76,15 @@ final class Facebook implements Registrable {
 	) {}
 
 	/**
-	 * Engancha los tres handlers de admin-post.
+	 * Engancha los handlers de admin-post.
 	 */
 	public function register_hooks(): void {
 		add_action( 'admin_post_' . self::ACTION_START, array( $this, 'handle_start' ) );
 		add_action( 'admin_post_' . self::ACTION_CALLBACK, array( $this, 'handle_callback' ) );
+		// admin-post.php responde 400 en blanco a una petición sin cookie cuando no hay un
+		// hook admin_post_nopriv_{accion}; Facebook puede volver con una sesión de wp-admin
+		// ya caducada, así que aquí se manda al login en vez de perder el code y el state.
+		add_action( 'admin_post_nopriv_' . self::ACTION_CALLBACK, array( $this, 'handle_callback_nopriv' ) );
 		add_action( 'admin_post_' . self::ACTION_CONNECT, array( $this, 'handle_connect' ) );
 	}
 
@@ -334,6 +338,9 @@ final class Facebook implements Registrable {
 	public function connect( array $selection ): array {
 		$candidates = array();
 		foreach ( $this->candidates() as $page ) {
+			if ( ! isset( $page['id'] ) ) {
+				continue;
+			}
 			$candidates[ (string) $page['id'] ] = $page;
 		}
 
@@ -373,6 +380,10 @@ final class Facebook implements Registrable {
 				'credentials'       => array( 'access_token' => (string) $page['access_token'] ),
 				'scopes'            => array_values( (array) ( $page['granted_scopes'] ?? array() ) ),
 				'status'            => 'active',
+				// Se aplica también al reconectar: una salud vieja (p. ej. "token inválido")
+				// no debe seguir mostrándose junto a un canal que acaba de volver a "active".
+				'health'            => array(),
+				'health_checked_at' => null,
 			);
 
 			if ( null !== $existing ) {
@@ -445,7 +456,10 @@ final class Facebook implements Registrable {
 			$this->back( '', '' !== $description ? $description : __( 'Facebook no autorizó la conexión.', 'voceador' ) );
 		}
 
-		$code = isset( $_GET['code'] ) ? sanitize_text_field( wp_unslash( $_GET['code'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- El "state" ya verificado arriba cubre este callback.
+		// sanitize_text_field() borra las secuencias "%xx", y Facebook devuelve el code
+		// url-encoded; se sanea con una lista blanca de caracteres en su lugar (ver abajo).
+		$raw  = isset( $_GET['code'] ) ? (string) wp_unslash( $_GET['code'] ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- El "state" ya verificado arriba cubre este callback; el saneado ocurre en la línea siguiente, con preg_replace() en vez de sanitize_text_field().
+		$code = (string) preg_replace( '/[^A-Za-z0-9._\-]/', '', $raw );
 
 		if ( '' === $code ) {
 			$this->back( '', __( 'Facebook no devolvió el código de autorización.', 'voceador' ) );
@@ -477,20 +491,30 @@ final class Facebook implements Registrable {
 		unset( $page );
 
 		$this->store_candidates( $pages );
-		$this->back( __( 'Elige las Páginas que quieres conectar.', 'voceador' ), '', array( 'voceador_step' => 'pages' ) );
+		$this->back( __( 'Elige las Páginas que quieres conectar.', 'voceador' ) );
 	}
 
 	/**
-	 * Da de alta las Páginas marcadas en el formulario.
+	 * Handler de admin_post_nopriv_{ACTION_CALLBACK}: Facebook volvió con una sesión de
+	 * wp-admin ya caducada. Manda al login conservando la URL actual (code y state
+	 * incluidos) como redirect_to, para que al identificarse vuelva a handle_callback().
 	 */
-	public function handle_connect(): void {
-		$this->authorize();
-		check_admin_referer( self::ACTION_CONNECT );
+	public function handle_callback_nopriv(): void {
+		auth_redirect();
+	}
 
-		$checked = isset( $_POST['connect'] ) ? array_map( 'sanitize_text_field', (array) wp_unslash( $_POST['connect'] ) ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Cada elemento se sanea con sanitize_text_field() en el propio array_map().
+	/**
+	 * Extrae de un array de tipo $_POST (ya sin barras invertidas) la selección de
+	 * Páginas a conectar: solo las marcadas en connect[], con su alias saneado.
+	 *
+	 * @param array $post Datos ya pasados por wp_unslash().
+	 * @return array<string, string> Id de Página => alias.
+	 */
+	public function selection_from( array $post ): array {
+		$checked = isset( $post['connect'] ) ? array_map( 'sanitize_text_field', (array) $post['connect'] ) : array();
 
 		$selection = array();
-		$raw       = isset( $_POST['pages'] ) ? wp_unslash( $_POST['pages'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Cada elemento se sanea justo debajo.
+		$raw       = isset( $post['pages'] ) ? $post['pages'] : array();
 
 		foreach ( (array) $raw as $page_id => $alias ) {
 			if ( ! is_scalar( $alias ) ) {
@@ -505,6 +529,18 @@ final class Facebook implements Registrable {
 
 			$selection[ $page_id ] = sanitize_text_field( (string) $alias );
 		}
+
+		return $selection;
+	}
+
+	/**
+	 * Da de alta las Páginas marcadas en el formulario.
+	 */
+	public function handle_connect(): void {
+		$this->authorize();
+		check_admin_referer( self::ACTION_CONNECT );
+
+		$selection = $this->selection_from( wp_unslash( $_POST ) ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- selection_from() sanea cada campo.
 
 		if ( ! $selection ) {
 			$this->back( '', __( 'No marcaste ninguna Página.', 'voceador' ) );

@@ -275,6 +275,49 @@ class OAuthFacebookTest extends WP_UnitTestCase {
 		$this->assertSame( 'Principal', $channel->alias, 'Un alias en blanco conserva el alias existente.' );
 	}
 
+	public function test_connect_clears_stale_health_on_reconnect(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		$this->oauth->store_candidates(
+			array(
+				array(
+					'id'           => '1001',
+					'name'         => 'Una',
+					'access_token' => 'T1',
+				),
+			)
+		);
+		$this->oauth->connect( array( '1001' => 'Principal' ) );
+
+		$channel = $this->channels->find_by_remote( 'facebook_page', '1001' );
+		$this->channels->set_status(
+			$channel->id,
+			'paused',
+			array(
+				'valid'   => false,
+				'message' => 'Token rechazado por Facebook.',
+			)
+		);
+		$stale = $this->channels->find( $channel->id );
+		$this->assertNotSame( array(), $stale->health, 'El canal queda con salud de fallo antes de reconectar.' );
+		$this->assertNotNull( $stale->health_checked_at );
+
+		$this->oauth->store_candidates(
+			array(
+				array(
+					'id'           => '1001',
+					'name'         => 'Una',
+					'access_token' => 'T1-NUEVO',
+				),
+			)
+		);
+		$this->oauth->connect( array( '1001' => 'Principal' ) );
+
+		$reconnected = $this->channels->find( $channel->id );
+		$this->assertSame( 'active', $reconnected->status );
+		$this->assertSame( array(), $reconnected->health, 'Reconectar borra la salud vieja.' );
+		$this->assertNull( $reconnected->health_checked_at, 'Reconectar borra la fecha de la salud vieja.' );
+	}
+
 	public function test_connect_rejects_pages_without_create_content(): void {
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		$this->oauth->store_candidates(
@@ -363,6 +406,7 @@ class OAuthFacebookTest extends WP_UnitTestCase {
 
 		$this->assertNotFalse( has_action( 'admin_post_' . Facebook::ACTION_START, array( $this->oauth, 'handle_start' ) ) );
 		$this->assertNotFalse( has_action( 'admin_post_' . Facebook::ACTION_CALLBACK, array( $this->oauth, 'handle_callback' ) ) );
+		$this->assertNotFalse( has_action( 'admin_post_nopriv_' . Facebook::ACTION_CALLBACK, array( $this->oauth, 'handle_callback_nopriv' ) ), 'El callback sobrevive a una sesión perdida.' );
 		$this->assertNotFalse( has_action( 'admin_post_' . Facebook::ACTION_CONNECT, array( $this->oauth, 'handle_connect' ) ) );
 	}
 }
