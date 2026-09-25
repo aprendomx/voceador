@@ -9,6 +9,7 @@ namespace Voceador;
 
 use Voceador\Channels\ChannelRegistry;
 use Voceador\Channels\FacebookPageAdapter;
+use Voceador\OAuth\Facebook;
 
 /**
  * Lógica de los comandos `wp voceador …`. Los subcomandos son envoltorios finos
@@ -25,6 +26,9 @@ final class CLI {
 	 * @param JobRepository     $jobs      Trabajos.
 	 * @param Queue             $queue     Cola.
 	 * @param Logger            $logger    Log.
+	 * @param TokenManager      $tokens    Salud de los tokens.
+	 * @param AppCredentials    $app       Credenciales de la app de Meta.
+	 * @param Facebook          $oauth     Conexión con Facebook.
 	 */
 	public function __construct(
 		private ChannelRepository $channels,
@@ -32,7 +36,10 @@ final class CLI {
 		private Publisher $publisher,
 		private JobRepository $jobs,
 		private Queue $queue,
-		private Logger $logger
+		private Logger $logger,
+		private TokenManager $tokens,
+		private AppCredentials $app,
+		private Facebook $oauth
 	) {}
 
 	/**
@@ -46,6 +53,7 @@ final class CLI {
 		\WP_CLI::add_command( 'voceador channels add-facebook', array( $this, 'cmd_channels_add_facebook' ) );
 		\WP_CLI::add_command( 'voceador channels list', array( $this, 'cmd_channels_list' ) );
 		\WP_CLI::add_command( 'voceador channels delete', array( $this, 'cmd_channels_delete' ) );
+		\WP_CLI::add_command( 'voceador channels check', array( $this, 'cmd_channels_check' ) );
 		\WP_CLI::add_command( 'voceador publish', array( $this, 'cmd_publish' ) );
 		\WP_CLI::add_command( 'voceador retry', array( $this, 'cmd_retry' ) );
 		\WP_CLI::add_command( 'voceador status', array( $this, 'cmd_status' ) );
@@ -117,6 +125,32 @@ final class CLI {
 	 */
 	public function delete_channel( int $id ): bool {
 		return $this->channels->delete( $id );
+	}
+
+	/**
+	 * Revisa la salud de uno o de todos los canales sin cambiar su estado.
+	 *
+	 * @param int|null $channel_id Canal concreto, o null para todos.
+	 * @return array[] Filas con el resultado de cada canal.
+	 */
+	public function check_channels( ?int $channel_id = null ): array {
+		$channels = null === $channel_id ? $this->channels->all() : array_filter( array( $this->channels->find( $channel_id ) ) );
+		$rows     = array();
+
+		foreach ( $channels as $channel ) {
+			$report = $this->tokens->check( $channel );
+
+			$rows[] = array(
+				'channel'        => $channel->id,
+				'alias'          => $channel->alias,
+				'valid'          => $report->valid,
+				'message'        => $report->message,
+				'expires_at'     => (string) ( $report->expires_at ?? '' ),
+				'missing_scopes' => implode( ',', $report->missing_scopes ),
+			);
+		}
+
+		return $rows;
 	}
 
 	/**
@@ -248,6 +282,11 @@ final class CLI {
 			'jobs'             => $this->jobs->count_by_status(),
 			'action_scheduler' => $this->queue->uses_action_scheduler(),
 			'cron_available'   => $this->queue->cron_available(),
+			'app'              => array(
+				'configured'   => $this->app->is_configured(),
+				'app_id'       => $this->app->app_id(),
+				'redirect_uri' => $this->oauth->redirect_uri(),
+			),
 			'recent_log'       => array_map(
 				static fn( array $row ) => array(
 					'created_at' => $row['created_at'],
@@ -308,6 +347,32 @@ final class CLI {
 			\WP_CLI::error( 'No existe ese canal.' );
 		}
 		\WP_CLI::success( sprintf( 'Canal %d eliminado.', $id ) );
+	}
+
+	/**
+	 * `wp voceador channels check [<id>] [--all]`
+	 *
+	 * @param array $args       Posicionales.
+	 * @param array $assoc_args Opciones.
+	 */
+	public function cmd_channels_check( array $args, array $assoc_args ): void {
+		if ( ! empty( $assoc_args['all'] ) ) {
+			$result = $this->tokens->check_all();
+			\WP_CLI::success( sprintf( '%d canal(es) revisado(s), %d pausado(s).', $result['checked'], $result['paused'] ) );
+
+			return;
+		}
+
+		$channel_id = isset( $args[0] ) ? absint( $args[0] ) : null;
+		$rows       = $this->check_channels( $channel_id );
+
+		if ( ! $rows ) {
+			\WP_CLI::warning( 'No hay canales que revisar.' );
+
+			return;
+		}
+
+		\WP_CLI\Utils\format_items( 'table', $rows, array( 'channel', 'alias', 'valid', 'message', 'expires_at', 'missing_scopes' ) );
 	}
 
 	/**
@@ -377,6 +442,8 @@ final class CLI {
 		\WP_CLI::line( 'Trabajos: ' . wp_json_encode( $status['jobs'] ) );
 		\WP_CLI::line( 'Action Scheduler: ' . ( $status['action_scheduler'] ? 'sí' : 'no' ) );
 		\WP_CLI::line( 'Cron disponible: ' . ( $status['cron_available'] ? 'sí' : 'no' ) );
+		\WP_CLI::line( 'App de Meta: ' . ( $status['app']['configured'] ? 'configurada (' . $status['app']['app_id'] . ')' : 'sin configurar' ) );
+		\WP_CLI::line( 'Redirect URI: ' . $status['app']['redirect_uri'] );
 
 		if ( $status['recent_log'] ) {
 			// Defensa en profundidad: el mensaje ya viene redactado de Logger::log(), pero

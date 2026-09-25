@@ -3,7 +3,7 @@
  * Plugin Name:       Voceador – Autopublicación de notas en redes sociales
  * Plugin URI:        https://github.com/aprendomx/voceador
  * Description:       Anuncia automáticamente cada nota nueva en tus Páginas de Facebook y cuentas de Instagram.
- * Version:           0.1.0
+ * Version:           0.2.0
  * Requires at least: 6.5
  * Requires PHP:      8.1
  * Author:            Aprendo MX
@@ -23,6 +23,14 @@ register_activation_hook(
 	__FILE__,
 	static function ( $network_wide ): void {
 		\Voceador\Plugin::boot()->installer()->activate( (bool) $network_wide );
+	}
+);
+
+register_deactivation_hook(
+	__FILE__,
+	static function (): void {
+		wp_unschedule_hook( \Voceador\TokenManager::HOOK );
+		wp_unschedule_hook( \Voceador\Queue::HOOK_SWEEP );
 	}
 );
 

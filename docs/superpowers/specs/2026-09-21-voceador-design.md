@@ -131,7 +131,7 @@ Tablas y opciones por sitio. Defaults de red en `site_option` `voceador_network_
 | Opción | Contenido |
 | --- | --- |
 | `voceador_db_version` | Versión del esquema (autoload sí) |
-| `voceador_app` | App ID, App Secret cifrado, versión de Graph API; ID/secret de la app de Instagram Login si es distinta |
+| `voceador_app` | App ID y App Secret cifrado, y si las Páginas están en un Business Manager |
 | `voceador_settings` | Defaults globales: `rules`, `templates`, `image`, `execution`, `editor`, `notifications`, `log`, `uninstall` (misma forma que `channels.settings`) |
 | `voceador_link_in_bio` | Activación, slug(s), modo (por cuenta/compartida), UTM, nº de tarjetas, usar imagen de Instagram |
 | `voceador_wizard` | Paso actual, pasos completados, `dismissed`, `completed_at` |
@@ -139,6 +139,8 @@ Tablas y opciones por sitio. Defaults de red en `site_option` `voceador_network_
 | `voceador_crypto_seed` | Semilla de la clave de cifrado, solo si no hay salts utilizables (ver Cifrado) |
 | `voceador_cron_last_run` | Marca de la última ejecución de la cola, para detectar cron del sistema |
 | `voceador_network_defaults` (`site_option`) | Defaults de red |
+
+La versión de Graph API vive en `voceador_settings.graph_version` (dentro de `voceador_settings`, no en `voceador_app`).
 
 Transients: `voceador_lock_job_{id}`, `voceador_lock_comment_{id}`, `voceador_oauth_state_{hash}` (10 min, ligado al usuario), `voceador_activation_redirect`, `voceador_ig_usage_{channel_id}`.
 
@@ -210,7 +212,7 @@ Cada fase tiene su propio plan de implementación y se revisa antes de pasar a l
 | 0 | wp-env, PHPUnit, PHPCS (WPCS), esqueleto con autoloader, `Schema`, `uninstall.php` | El plugin activa, crea tablas y los tests pasan |
 | 1a | Contenedor perezoso, `Crypto` (adelantado: ningún token se guarda en claro ni en staging), contratos de canal y registry, repositorios, `GraphClient`, `Logger` mínimo, `Settings` mínimo | Tests con mocks; `DB_VERSION` 2 (índice `(status, scheduled_at)` en `jobs`) ejercita la ruta de upgrade |
 | 1b | `Templates` mínimo, `FacebookPageAdapter` con token manual, `Queue`, `Publisher`, disparador, CLI mínimo (`channels add/list`, `publish`, `status`) | En staging un post publica foto y comentario en una Página de prueba |
-| 2 | `OAuth\Facebook`, `TokenManager`, cron de salud, avisos, "Reconectar" | OAuth completo en staging; revocar el token pausa el canal y avisa |
+| 2 | `OAuth\Facebook`, `TokenManager`, cron de salud, avisos, "Reconectar", pantalla de conexiones (`Admin\ConnectionsPage`) | OAuth completo en staging; revocar el token pausa el canal y avisa |
 | 3 | `Rules`, `Templates`, `EditorIntegration` (bloques y clásico), REST de preview y estado | La vista previa coincide con lo publicado; la selección manual sobrescribe reglas |
 | 4 | `OAuth\Instagram` (ambos métodos), `InstagramAdapter`, contenedores, límites, renovación de token | Publicación en una cuenta de Instagram de prueba por ambos métodos |
 | 5 | `ImageProcessor` (JPEG, recorte/relleno, caché), `LinkInBio` | Imágenes fuera de rango salen válidas; `/ig` renderiza en móvil y modo oscuro |

@@ -24,6 +24,9 @@ final class Plugin {
 		Queue::class,
 		Publisher::class,
 		Trigger::class,
+		OAuth\Facebook::class,
+		TokenManager::class,
+		Admin\ConnectionsPage::class,
 	);
 
 	/**
@@ -147,6 +150,10 @@ final class Plugin {
 			return new Crypto();
 		};
 
+		$this->factories[ AppCredentials::class ] = static function ( Plugin $c ): AppCredentials {
+			return new AppCredentials( $c->get( Crypto::class ) );
+		};
+
 		$this->factories[ Settings::class ] = static function (): Settings {
 			return new Settings();
 		};
@@ -210,8 +217,27 @@ final class Plugin {
 			return new Trigger( $c->get( Rules::class ), $c->get( JobRepository::class ), $c->get( Queue::class ), $c->get( Settings::class ), $c->get( Logger::class ) );
 		};
 
+		$this->factories[ OAuth\Facebook::class ] = static function ( Plugin $c ): OAuth\Facebook {
+			return new OAuth\Facebook(
+				$c->get( AppCredentials::class ),
+				$c->get( GraphClient::class ),
+				$c->get( ChannelRepository::class ),
+				$c->get( Crypto::class ),
+				$c->get( Settings::class ),
+				$c->get( Logger::class )
+			);
+		};
+
 		$this->factories[ CLI::class ] = static function ( Plugin $c ): CLI {
-			return new CLI( $c->get( ChannelRepository::class ), $c->get( Channels\ChannelRegistry::class ), $c->get( Publisher::class ), $c->get( JobRepository::class ), $c->get( Queue::class ), $c->get( Logger::class ) );
+			return new CLI( $c->get( ChannelRepository::class ), $c->get( Channels\ChannelRegistry::class ), $c->get( Publisher::class ), $c->get( JobRepository::class ), $c->get( Queue::class ), $c->get( Logger::class ), $c->get( TokenManager::class ), $c->get( AppCredentials::class ), $c->get( OAuth\Facebook::class ) );
+		};
+
+		$this->factories[ TokenManager::class ] = static function ( Plugin $c ): TokenManager {
+			return new TokenManager( $c->get( AppCredentials::class ), $c->get( GraphClient::class ), $c->get( ChannelRepository::class ), $c->get( Logger::class ) );
+		};
+
+		$this->factories[ Admin\ConnectionsPage::class ] = static function ( Plugin $c ): Admin\ConnectionsPage {
+			return new Admin\ConnectionsPage( $c->get( AppCredentials::class ), $c->get( OAuth\Facebook::class ), $c->get( ChannelRepository::class ), $c->get( TokenManager::class ), $c->get( Channels\ChannelRegistry::class ) );
 		};
 	}
 
