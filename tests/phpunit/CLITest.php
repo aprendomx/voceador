@@ -24,6 +24,7 @@ class CLITest extends WP_UnitTestCase {
 
 	private CLI $cli;
 	private ChannelRepository $channels;
+	private AppCredentials $app;
 	private array $responses = array();
 
 	public function set_up(): void {
@@ -40,10 +41,12 @@ class CLITest extends WP_UnitTestCase {
 		$queue          = new Queue( $jobs, $logger );
 		$publisher      = new Publisher( $jobs, $this->channels, $registry, new Templates( $settings ), $settings, $logger, $queue );
 		$crypto         = new Crypto( str_repeat( 'k', SODIUM_CRYPTO_SECRETBOX_KEYBYTES ) );
-		$app            = new AppCredentials( $crypto );
-		$app->save( '111222333', 'secreto' );
-		$tokens    = new TokenManager( $app, $graph, $this->channels, $logger );
-		$this->cli = new CLI( $this->channels, $registry, $publisher, $jobs, $queue, $logger, $tokens, $app );
+		// La app de Meta se deja sin configurar aquí, como en un sitio recién activado; los
+		// tests que necesitan una app configurada (p. ej. para que TokenManager::check() llegue
+		// a llamar a Graph) la configuran ellos mismos con $this->app->save(...).
+		$this->app = new AppCredentials( $crypto );
+		$tokens    = new TokenManager( $this->app, $graph, $this->channels, $logger );
+		$this->cli = new CLI( $this->channels, $registry, $publisher, $jobs, $queue, $logger, $tokens, $this->app );
 
 		add_filter( 'pre_http_request', array( $this, 'respond' ), 10, 3 );
 	}
@@ -269,15 +272,17 @@ class CLITest extends WP_UnitTestCase {
 	public function test_status_reports_the_app(): void {
 		$status = $this->cli->status();
 
-		// set_up() configura la app (necesario para test_check_channels_reports_without_pausing,
-		// que necesita que TokenManager::check() llegue a consultar Graph); por eso aquí se
-		// afirma "configurada", a diferencia del smoke local con el plugin recién activado.
-		$this->assertTrue( $status['app']['configured'] );
-		$this->assertSame( '111222333', $status['app']['app_id'] );
+		$this->assertFalse( $status['app']['configured'] );
+		$this->assertSame( '', $status['app']['app_id'] );
 		$this->assertStringContainsString( 'action=voceador_oauth_fb', $status['app']['redirect_uri'] );
 	}
 
 	public function test_check_channels_reports_without_pausing(): void {
+		// Este test comprueba la ruta real de debug_token (app_id/profile_id de la respuesta
+		// contra los del canal), no el atajo de "app sin configurar" de TokenManager::check();
+		// para eso necesita una app configurada, a diferencia del resto de la suite.
+		$this->app->save( '111222333', 'secreto' );
+
 		$this->responses[] = GraphResponses::ok(
 			array(
 				'id'   => '1001',

@@ -21,7 +21,7 @@ When a post is published, Voceador queues one job per connected channel and, for
 
 **What is included in this version**
 
-* Connect one or more Facebook Pages using a Page access token, or with Facebook Login (OAuth) instead of manual tokens, plus token health monitoring.
+* Connect one or more Facebook Pages with Facebook Login (OAuth), or with a Page access token via WP-CLI.
 * Connect your Pages from the WordPress dashboard with a "Connect with Facebook" button; no tokens to copy by hand.
 * A daily health check that pauses a channel and shows a notice when its token stops working.
 * Caption and comment templates with placeholders: `{title}`, `{excerpt}`, `{permalink}`, `{shortlink}`, `{site_name}`, `{author}`, `{category}`, `{categories}`, `{date}` and `{social_message}` with a configurable fallback chain.
@@ -35,7 +35,7 @@ When a post is published, Voceador queues one job per connected channel and, for
 
 **On the roadmap**
 
-A settings screen for App ID and App Secret, an editor panel for the newsroom, Instagram support with image processing and a link-in-bio page, an onboarding wizard and email notifications.
+A full settings screen for rules, templates and scheduling, an editor panel for the newsroom, Instagram support with image processing and a link-in-bio page, an onboarding wizard and email notifications.
 
 **Requirements**
 
