@@ -156,16 +156,18 @@ class LoggerTest extends WP_UnitTestCase {
 	}
 
 	public function test_redact_masks_app_and_instagram_tokens(): void {
-		$app_token = '1234567890123456|' . str_repeat( 'a1b2', 8 );
+		$app_token = '1234567890123456|' . str_repeat( 'a1b2c3d4', 4 );
 		$ig_token  = 'IGAA' . str_repeat( 'Xy9', 12 );
 		$ig_legacy = 'IGQVJ' . str_repeat( 'Zz8', 12 );
 
 		$redacted = Logger::redact(
 			array(
-				'msg'  => 'app ' . $app_token . ' fin',
-				'ig'   => 'token ' . $ig_token,
-				'old'  => $ig_legacy,
-				'safe' => '12345|corto',
+				'msg'    => 'app ' . $app_token . ' fin',
+				'ig'     => 'token ' . $ig_token,
+				'old'    => $ig_legacy,
+				'safe'   => '12345|corto',
+				'pedido' => 'pedido 20250925001|a1b2c3d4e5f6a1b2c3d4e5f6ghijklmn',
+				'const'  => 'IGNOREME_CONSTANT_1234567890',
 			)
 		);
 
@@ -173,10 +175,12 @@ class LoggerTest extends WP_UnitTestCase {
 		$this->assertSame( 'token [redactado]', $redacted['ig'] );
 		$this->assertSame( '[redactado]', $redacted['old'] );
 		$this->assertSame( '12345|corto', $redacted['safe'], 'Un pipe suelto no es un token de app.' );
+		$this->assertSame( 'pedido 20250925001|a1b2c3d4e5f6a1b2c3d4e5f6ghijklmn', $redacted['pedido'], 'Un identificador numérico|alfanumérico que no es hex de 32 no es un token de app.' );
+		$this->assertSame( 'IGNOREME_CONSTANT_1234567890', $redacted['const'], 'Un identificador que empieza en IG pero no con el prefijo de Meta no es un token de Instagram.' );
 	}
 
 	public function test_redact_string_masks_app_token_in_a_url(): void {
-		$app_token = '1234567890123456|' . str_repeat( 'a1b2', 8 );
+		$app_token = '1234567890123456|' . str_repeat( 'a1b2c3d4', 4 );
 
 		$this->assertSame(
 			'https://graph.facebook.com/v26.0/debug_token?access_token=[redactado]&input_token=[redactado]',
