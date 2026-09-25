@@ -237,7 +237,7 @@ final class Publisher implements Registrable {
 				);
 				self::add_notice(
 					Notices::key_for_channel( $channel->id ),
-					sprintf( /* translators: 1: alias del canal, 2: mensaje de error */ __( 'Voceador pausó el canal "%1$s": %2$s. Vuelve a conectarlo desde los ajustes.', 'voceador' ), $channel->alias, $message )
+					sprintf( /* translators: 1: alias del canal, 2: mensaje de error */ __( 'Voceador pausó el canal "%1$s": %2$s. Vuelve a conectarlo desde Voceador → Conexiones.', 'voceador' ), $channel->alias, $message )
 				);
 				$status = 'failed';
 				break;

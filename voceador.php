@@ -26,4 +26,12 @@ register_activation_hook(
 	}
 );
 
+register_deactivation_hook(
+	__FILE__,
+	static function (): void {
+		wp_unschedule_hook( \Voceador\TokenManager::HOOK );
+		wp_unschedule_hook( \Voceador\Queue::HOOK_SWEEP );
+	}
+);
+
 add_action( 'plugins_loaded', array( \Voceador\Plugin::class, 'boot' ) );
