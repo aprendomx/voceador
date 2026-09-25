@@ -21,8 +21,7 @@ When a post is published, Voceador queues one job per connected channel and, for
 
 **What is included in this version**
 
-* Connect one or more Facebook Pages with Facebook Login (OAuth), or with a Page access token via WP-CLI.
-* Connect your Pages from the WordPress dashboard with a "Connect with Facebook" button; no tokens to copy by hand.
+* Connect one or more Facebook Pages from the WordPress dashboard with a "Connect with Facebook" button (Facebook Login / OAuth, no tokens to copy by hand), or with a Page access token via WP-CLI.
 * A daily health check that pauses a channel and shows a notice when its token stops working.
 * Caption and comment templates with placeholders: `{title}`, `{excerpt}`, `{permalink}`, `{shortlink}`, `{site_name}`, `{author}`, `{category}`, `{categories}`, `{date}` and `{social_message}` with a configurable fallback chain.
 * Routing rules per channel by post type, plus per-post overrides through post meta.
@@ -93,7 +92,7 @@ Not yet. Instagram support is on the roadmap and will require a professional (Bu
 = 0.2.0 =
 * Connect Facebook Pages with Facebook Login (OAuth) from the WordPress dashboard, no tokens to copy by hand; manual Page access tokens via WP-CLI are still supported.
 * App ID and App Secret are stored encrypted with libsodium.
-* A daily health check calls Facebook's `debug_token`, pauses a channel and shows an admin notice when its token stops working or is missing permissions.
+* A daily health check calls Facebook's `debug_token`, pauses a channel and shows an admin notice when its token stops working.
 * New WP-CLI command `wp voceador channels check [<id>] [--all]` to inspect (or, with `--all`, run the same check the daily cron runs) a channel's token health.
 * `wp voceador status` now reports whether the Meta app is configured and its OAuth redirect URI.
 
