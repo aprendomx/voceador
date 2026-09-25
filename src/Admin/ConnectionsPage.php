@@ -10,6 +10,7 @@ namespace Voceador\Admin;
 use Voceador\AppCredentials;
 use Voceador\ChannelRepository;
 use Voceador\Channels\ChannelRegistry;
+use Voceador\Channels\FacebookPageAdapter;
 use Voceador\Installer;
 use Voceador\Notices;
 use Voceador\OAuth\Facebook;
@@ -166,6 +167,7 @@ final class ConnectionsPage implements Registrable {
 				'scopes'         => $report->scopes,
 				'missing_scopes' => $report->missing_scopes,
 				'expires_at'     => $report->expires_at,
+				'type'           => (string) ( $report->raw['type'] ?? '' ),
 			);
 
 			if ( $report->valid ) {
@@ -247,9 +249,16 @@ final class ConnectionsPage implements Registrable {
 	 */
 	private function render_app_form(): void {
 		echo '<h2>' . esc_html__( 'App de Meta', 'voceador' ) . '</h2>';
+
+		if ( ! str_starts_with( $this->oauth->redirect_uri(), 'https://' ) ) {
+			echo '<div class="notice notice-warning inline"><p>' . esc_html__( 'Meta exige que la URI de redirección use HTTPS. Revisa la constante FORCE_SSL_ADMIN o si tu proxy inverso está enviando la cabecera X-Forwarded-Proto.', 'voceador' ) . '</p></div>';
+		}
+
 		echo '<p>' . esc_html__( 'Registra esta URI de redirección en tu app (Facebook Login → Settings → Valid OAuth Redirect URIs):', 'voceador' ) . '</p>';
 		echo '<p><input type="text" class="large-text code" readonly value="' . esc_attr( $this->oauth->redirect_uri() ) . '" onfocus="this.select()" />';
-		echo ' <button type="button" class="button" onclick="navigator.clipboard.writeText(this.previousElementSibling.value);this.textContent=' . esc_attr( wp_json_encode( __( '¡Copiada!', 'voceador' ) ) ) . ';">' . esc_html__( 'Copiar', 'voceador' ) . '</button></p>';
+		// navigator.clipboard no existe en un contexto no seguro (HTTP sin TLS); el try/catch
+		// evita un error de JS silencioso y avisa al administrador de que copie a mano.
+		echo ' <button type="button" class="button" onclick="try{navigator.clipboard.writeText(this.previousElementSibling.value);this.textContent=' . esc_attr( wp_json_encode( __( '¡Copiada!', 'voceador' ) ) ) . ';}catch(e){this.textContent=' . esc_attr( wp_json_encode( __( 'Selecciona y copia', 'voceador' ) ) ) . ';}">' . esc_html__( 'Copiar', 'voceador' ) . '</button></p>';
 
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 		wp_nonce_field( self::ACTION_SAVE_APP );
@@ -261,9 +270,13 @@ final class ConnectionsPage implements Registrable {
 
 		echo '<tr><th scope="row"><label for="voceador-app-secret">' . esc_html__( 'App Secret', 'voceador' ) . '</label></th>';
 		echo '<td><input type="password" id="voceador-app-secret" name="app_secret" class="regular-text" autocomplete="new-password" value="" /><p class="description">';
-		echo $this->app->has_secret()
-			? esc_html__( 'Ya hay un secreto guardado. Déjalo en blanco para conservarlo.', 'voceador' )
-			: esc_html__( 'Se guarda cifrado y no vuelve a mostrarse.', 'voceador' );
+		if ( $this->app->has_secret() && '' === $this->app->app_secret() ) {
+			echo esc_html__( 'El secreto guardado ya no se puede descifrar (cambiaron las salts del sitio). Vuelve a escribirlo.', 'voceador' );
+		} elseif ( $this->app->has_secret() ) {
+			echo esc_html__( 'Ya hay un secreto guardado. Déjalo en blanco para conservarlo.', 'voceador' );
+		} else {
+			echo esc_html__( 'Se guarda cifrado y no vuelve a mostrarse.', 'voceador' );
+		}
 		echo '</p></td></tr>';
 
 		echo '<tr><th scope="row">' . esc_html__( 'Business Manager', 'voceador' ) . '</th>';
@@ -295,12 +308,22 @@ final class ConnectionsPage implements Registrable {
 		echo '</tr></thead><tbody>';
 
 		foreach ( $candidates as $page ) {
-			$id   = (string) ( $page['id'] ?? '' );
-			$name = (string) ( $page['name'] ?? '' );
+			$id       = (string) ( $page['id'] ?? '' );
+			$name     = (string) ( $page['name'] ?? '' );
+			$existing = $this->channels->find_by_remote( FacebookPageAdapter::type(), $id );
+			// Reconectar no debe renombrar el canal: se pre-rellena con el alias que ya tiene,
+			// no con el nombre de la Página en Facebook, para que el fallback de
+			// Facebook::connect() (alias en blanco conserva el alias existente) nunca reciba
+			// un alias que en realidad es el nombre de la Página.
+			$alias = null !== $existing ? $existing->alias : $name;
 
 			echo '<tr><td><input type="checkbox" name="connect[]" value="' . esc_attr( $id ) . '" checked /></td>';
-			echo '<td>' . esc_html( $name ) . '<br /><code>' . esc_html( $id ) . '</code></td>';
-			echo '<td><input type="text" name="pages[' . esc_attr( $id ) . ']" class="regular-text" value="' . esc_attr( $name ) . '" /></td></tr>';
+			echo '<td>' . esc_html( $name ) . '<br /><code>' . esc_html( $id ) . '</code>';
+			if ( null !== $existing ) {
+				echo '<br /><span class="description">' . esc_html__( 'Ya conectada: se actualizará el token.', 'voceador' ) . '</span>';
+			}
+			echo '</td>';
+			echo '<td><input type="text" name="pages[' . esc_attr( $id ) . ']" class="regular-text" value="' . esc_attr( $alias ) . '" /></td></tr>';
 		}
 
 		echo '</tbody></table>';
@@ -329,9 +352,21 @@ final class ConnectionsPage implements Registrable {
 		echo '</tr></thead><tbody>';
 
 		foreach ( $channels as $channel ) {
-			$health         = isset( $channel->health['message'] ) ? (string) $channel->health['message'] : '';
-			$scopes         = isset( $channel->health['scopes'] ) ? (array) $channel->health['scopes'] : array();
-			$missing_scopes = isset( $channel->health['missing_scopes'] ) ? (array) $channel->health['missing_scopes'] : array();
+			$health = isset( $channel->health['message'] ) ? (string) $channel->health['message'] : '';
+			$type   = isset( $channel->health['type'] ) ? (string) $channel->health['type'] : '';
+			$scopes = isset( $channel->health['scopes'] ) ? (array) $channel->health['scopes'] : array();
+
+			if ( $scopes ) {
+				// La salud ya trae su propia lista de faltantes.
+				$missing_scopes = isset( $channel->health['missing_scopes'] ) ? (array) $channel->health['missing_scopes'] : array();
+			} elseif ( $channel->scopes ) {
+				// Un canal recién conectado (o reconectado) aún no tiene salud, pero
+				// connect() ya guardó los permisos que concedió Facebook: se usan esos.
+				$scopes         = $channel->scopes;
+				$missing_scopes = array_values( array_diff( TokenManager::REQUIRED_SCOPES, $channel->scopes ) );
+			} else {
+				$missing_scopes = array();
+			}
 
 			echo '<tr>';
 			echo '<td>' . esc_html( $channel->alias ) . '</td>';
@@ -340,6 +375,15 @@ final class ConnectionsPage implements Registrable {
 			echo '<td>' . esc_html( $channel->status );
 			if ( '' !== $health ) {
 				echo '<br /><span class="description">' . esc_html( $health ) . '</span>';
+			}
+			if ( '' !== $type ) {
+				echo '<br /><span class="description">' . esc_html(
+					sprintf(
+						/* translators: %s: tipo de token, p. ej. PAGE */
+						__( 'Token: %s', 'voceador' ),
+						$type
+					)
+				) . '</span>';
 			}
 			if ( $scopes ) {
 				echo '<br /><span class="description">' . esc_html(

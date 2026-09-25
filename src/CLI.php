@@ -9,6 +9,7 @@ namespace Voceador;
 
 use Voceador\Channels\ChannelRegistry;
 use Voceador\Channels\FacebookPageAdapter;
+use Voceador\OAuth\Facebook;
 
 /**
  * Lógica de los comandos `wp voceador …`. Los subcomandos son envoltorios finos
@@ -27,6 +28,7 @@ final class CLI {
 	 * @param Logger            $logger    Log.
 	 * @param TokenManager      $tokens    Salud de los tokens.
 	 * @param AppCredentials    $app       Credenciales de la app de Meta.
+	 * @param Facebook          $oauth     Conexión con Facebook.
 	 */
 	public function __construct(
 		private ChannelRepository $channels,
@@ -36,7 +38,8 @@ final class CLI {
 		private Queue $queue,
 		private Logger $logger,
 		private TokenManager $tokens,
-		private AppCredentials $app
+		private AppCredentials $app,
+		private Facebook $oauth
 	) {}
 
 	/**
@@ -282,7 +285,7 @@ final class CLI {
 			'app'              => array(
 				'configured'   => $this->app->is_configured(),
 				'app_id'       => $this->app->app_id(),
-				'redirect_uri' => admin_url( 'admin-post.php' ) . '?action=voceador_oauth_fb',
+				'redirect_uri' => $this->oauth->redirect_uri(),
 			),
 			'recent_log'       => array_map(
 				static fn( array $row ) => array(

@@ -75,7 +75,7 @@ final class TokenManager implements Registrable {
 		$token = (string) $channel->credential( 'access_token' );
 
 		if ( '' === $token ) {
-			return new HealthReport( false, __( 'El canal no tiene un token utilizable. Vuelve a conectarlo.', 'voceador' ) );
+			return new HealthReport( false, __( 'El canal no tiene un token utilizable.', 'voceador' ) );
 		}
 
 		if ( ! $this->app->is_configured() ) {
@@ -197,6 +197,7 @@ final class TokenManager implements Registrable {
 			'scopes'         => $report->scopes,
 			'missing_scopes' => $report->missing_scopes,
 			'expires_at'     => $report->expires_at,
+			'type'           => (string) ( $report->raw['type'] ?? '' ),
 		);
 	}
 }

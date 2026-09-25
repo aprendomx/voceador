@@ -12,6 +12,7 @@ use Voceador\Crypto;
 use Voceador\GraphClient;
 use Voceador\JobRepository;
 use Voceador\Logger;
+use Voceador\OAuth\Facebook;
 use Voceador\Publisher;
 use Voceador\Queue;
 use Voceador\Schema;
@@ -25,6 +26,7 @@ class CLITest extends WP_UnitTestCase {
 	private CLI $cli;
 	private ChannelRepository $channels;
 	private AppCredentials $app;
+	private Facebook $oauth;
 	private array $responses = array();
 
 	public function set_up(): void {
@@ -44,9 +46,10 @@ class CLITest extends WP_UnitTestCase {
 		// La app de Meta se deja sin configurar aquí, como en un sitio recién activado; los
 		// tests que necesitan una app configurada (p. ej. para que TokenManager::check() llegue
 		// a llamar a Graph) la configuran ellos mismos con $this->app->save(...).
-		$this->app = new AppCredentials( $crypto );
-		$tokens    = new TokenManager( $this->app, $graph, $this->channels, $logger );
-		$this->cli = new CLI( $this->channels, $registry, $publisher, $jobs, $queue, $logger, $tokens, $this->app );
+		$this->app   = new AppCredentials( $crypto );
+		$tokens      = new TokenManager( $this->app, $graph, $this->channels, $logger );
+		$this->oauth = new Facebook( $this->app, $graph, $this->channels, $crypto, $settings, $logger );
+		$this->cli   = new CLI( $this->channels, $registry, $publisher, $jobs, $queue, $logger, $tokens, $this->app, $this->oauth );
 
 		add_filter( 'pre_http_request', array( $this, 'respond' ), 10, 3 );
 	}
@@ -275,6 +278,7 @@ class CLITest extends WP_UnitTestCase {
 		$this->assertFalse( $status['app']['configured'] );
 		$this->assertSame( '', $status['app']['app_id'] );
 		$this->assertStringContainsString( 'action=voceador_oauth_fb', $status['app']['redirect_uri'] );
+		$this->assertSame( $this->oauth->redirect_uri(), $status['app']['redirect_uri'], 'El CLI y la pantalla no pueden divergir sobre la redirect_uri.' );
 	}
 
 	public function test_check_channels_reports_without_pausing(): void {

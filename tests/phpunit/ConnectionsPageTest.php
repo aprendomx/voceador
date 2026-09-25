@@ -24,6 +24,10 @@ class ConnectionsPageTest extends WP_UnitTestCase {
 	private AppCredentials $app;
 	private ChannelRepository $channels;
 	private Facebook $oauth;
+	private ChannelRegistry $registry;
+	private GraphClient $graph;
+	private Logger $logger;
+	private Settings $settings;
 
 	public function set_up(): void {
 		parent::set_up();
@@ -33,17 +37,18 @@ class ConnectionsPageTest extends WP_UnitTestCase {
 
 		$crypto         = new Crypto( str_repeat( 'k', SODIUM_CRYPTO_SECRETBOX_KEYBYTES ) );
 		$schema         = new Schema( $wpdb );
-		$logger         = new Logger( $wpdb, $schema, 'debug' );
-		$settings       = new Settings();
-		$graph          = new GraphClient( $settings, $logger );
+		$this->logger   = new Logger( $wpdb, $schema, 'debug' );
+		$this->settings = new Settings();
+		$this->graph    = new GraphClient( $this->settings, $this->logger );
 		$this->app      = new AppCredentials( $crypto );
 		$this->channels = new ChannelRepository( $wpdb, $schema, $crypto );
-		$this->oauth    = new Facebook( $this->app, $graph, $this->channels, $crypto, $settings, $logger );
-		$registry       = new ChannelRegistry( array( 'facebook_page' => static fn() => new FacebookPageAdapter( $graph, $settings ) ) );
-		$this->page     = new ConnectionsPage( $this->app, $this->oauth, $this->channels, new TokenManager( $this->app, $graph, $this->channels, $logger ), $registry );
+		$this->oauth    = new Facebook( $this->app, $this->graph, $this->channels, $crypto, $this->settings, $this->logger );
+		$this->registry = new ChannelRegistry( array( 'facebook_page' => fn() => new FacebookPageAdapter( $this->graph, $this->settings ) ) );
+		$this->page     = new ConnectionsPage( $this->app, $this->oauth, $this->channels, new TokenManager( $this->app, $this->graph, $this->channels, $this->logger ), $this->registry );
 
+		// El instalador ya concede Installer::CAPABILITY al rol administrator; no se repite
+		// aquí porque mutar $wp_roles se filtra entre tests.
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
-		get_role( 'administrator' )->add_cap( Installer::CAPABILITY );
 	}
 
 	private function render(): string {
@@ -73,6 +78,14 @@ class ConnectionsPageTest extends WP_UnitTestCase {
 
 		$this->assertNotNull( $entry, 'El menú de Voceador está registrado.' );
 		$this->assertSame( Installer::CAPABILITY, $entry[1] );
+	}
+
+	public function test_render_app_form_warns_when_the_redirect_uri_is_not_https(): void {
+		$this->assertStringStartsNotWith( 'https://', $this->oauth->redirect_uri(), 'El sitio de pruebas sirve por HTTP.' );
+
+		$html = $this->render();
+
+		$this->assertStringContainsString( 'Meta exige que la URI de redirección use HTTPS', $html );
 	}
 
 	public function test_render_asks_for_the_app_before_offering_to_connect(): void {
@@ -112,6 +125,44 @@ class ConnectionsPageTest extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'Página de Facebook', $html, 'Muestra la etiqueta del tipo de canal.' );
 		$this->assertStringContainsString( 'Permisos: pages_show_list, pages_manage_posts', $html );
 		$this->assertStringContainsString( 'Faltan: pages_read_engagement', $html );
+	}
+
+	public function test_channel_row_shows_scopes_and_token_type_before_the_first_health_check(): void {
+		$this->app->save( '111222333', 'secreto' );
+		$this->channels->insert(
+			array(
+				'type'        => 'facebook_page',
+				'alias'       => 'Recién conectada',
+				'remote_id'   => '3003',
+				'credentials' => array( 'access_token' => 'T' ),
+				'scopes'      => array( 'pages_show_list', 'pages_manage_posts' ),
+			)
+		);
+
+		$html = $this->render();
+
+		$this->assertStringContainsString( 'Permisos: pages_show_list, pages_manage_posts', $html, 'Un canal recién conectado ya enseña qué concedió Facebook.' );
+		$this->assertStringContainsString( 'Faltan: pages_read_engagement, pages_manage_engagement', $html );
+	}
+
+	public function test_channel_row_shows_the_token_type_from_health(): void {
+		$this->app->save( '111222333', 'secreto' );
+		$this->channels->insert(
+			array(
+				'type'        => 'facebook_page',
+				'alias'       => 'Prueba',
+				'remote_id'   => '4004',
+				'credentials' => array( 'access_token' => 'T' ),
+				'health'      => array(
+					'message' => 'Token válido.',
+					'type'    => 'PAGE',
+				),
+			)
+		);
+
+		$html = $this->render();
+
+		$this->assertStringContainsString( 'Token: PAGE', $html );
 	}
 
 	public function test_channel_row_with_no_health_shows_neither_permissions_line(): void {
@@ -182,6 +233,49 @@ class ConnectionsPageTest extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'name="pages[1001]"', $html );
 		$this->assertStringContainsString( 'Una &lt;b&gt;rara&lt;/b&gt;', $html, 'El nombre se escapa.' );
 		$this->assertStringNotContainsString( 'T1', $html );
+	}
+
+	public function test_render_candidates_prefills_the_alias_of_an_already_connected_page(): void {
+		$this->app->save( '111222333', 'secreto' );
+		$this->channels->insert(
+			array(
+				'type'        => 'facebook_page',
+				'alias'       => 'Portada',
+				'remote_id'   => '1001',
+				'remote_name' => 'Diario Voceador',
+				'credentials' => array( 'access_token' => 'T' ),
+			)
+		);
+		$this->oauth->store_candidates(
+			array(
+				array(
+					'id'           => '1001',
+					'name'         => 'Diario Voceador',
+					'access_token' => 'T1',
+				),
+			)
+		);
+
+		$html = $this->render();
+
+		$this->assertStringContainsString( 'value="Portada"', $html, 'Reconectar no debe renombrar el canal.' );
+		$this->assertStringNotContainsString( 'value="Diario Voceador"', $html );
+		$this->assertStringContainsString( 'Ya conectada: se actualizará el token.', $html );
+	}
+
+	public function test_render_app_form_warns_when_the_secret_cannot_be_decrypted(): void {
+		// La app se cifra con otra clave: has_secret() sigue siendo true (hay algo guardado),
+		// pero app_secret() no puede descifrarlo, como pasaría si cambiaran las salts del sitio.
+		$this->app->save( '111222333', 'secreto' );
+		$app_roto = new AppCredentials( new Crypto( str_repeat( 'z', SODIUM_CRYPTO_SECRETBOX_KEYBYTES ) ) );
+		$page     = new ConnectionsPage( $app_roto, $this->oauth, $this->channels, new TokenManager( $app_roto, $this->graph, $this->channels, $this->logger ), $this->registry );
+
+		ob_start();
+		$page->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'El secreto guardado ya no se puede descifrar', $html );
+		$this->assertStringNotContainsString( 'Déjalo en blanco para conservarlo.', $html );
 	}
 
 	public function test_notices_are_rendered_escaped_and_can_be_dismissed(): void {
